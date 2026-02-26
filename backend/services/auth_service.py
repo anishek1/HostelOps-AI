@@ -11,9 +11,11 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+import bcrypt
 
 from config import settings
 from database import get_db
@@ -24,17 +26,21 @@ from schemas.enums import UserRole
 # Password hashing
 # ---------------------------------------------------------------------------
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def hash_password(password: str) -> str:
     """Hash a plain-text password using bcrypt."""
-    return _pwd_context.hash(password)
+    # bcrypt requires bytes
+    salt = bcrypt.gensalt()
+    # truncate to 72 bytes to avoid bcrypt error if someone inputs super long password
+    pwd_bytes = password.encode('utf-8')[:72] 
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Compare plain-text password against a stored bcrypt hash."""
-    return _pwd_context.verify(plain, hashed)
+    pwd_bytes = plain.encode('utf-8')[:72]
+    hash_bytes = hashed.encode('utf-8')
+    return bcrypt.checkpw(pwd_bytes, hash_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -140,3 +146,108 @@ def require_role(*roles: UserRole):
         return current_user
 
     return _role_checker
+
+
+# ---------------------------------------------------------------------------
+# Business Logic
+# ---------------------------------------------------------------------------
+
+async def register_user(payload, db: AsyncSession):
+    from schemas.user import UserRead
+    from schemas.enums import NotificationType
+    from services.notification_service import notify_all_by_role
+
+    # Validate college-mode requirements
+    if payload.hostel_mode.value == "college":
+        if not payload.roll_number:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="roll_number is required for college hostel mode.",
+            )
+        if not payload.erp_document_url:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="erp_document_url is required for college hostel mode.",
+            )
+
+    # Check for duplicate room_number + role combination (optional guard)
+    existing = await db.execute(
+        select(User).where(
+            User.room_number == payload.room_number,
+            User.role == payload.role,
+            User.is_active == True,  # noqa: E712
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active account with this room number and role already exists.",
+        )
+
+    user = User(
+        name=payload.name,
+        room_number=payload.room_number,
+        role=payload.role,
+        hostel_mode=payload.hostel_mode,
+        hashed_password=hash_password(payload.password),
+        roll_number=payload.roll_number,
+        erp_document_url=payload.erp_document_url,
+        is_verified=False,
+        is_active=True,
+    )
+    db.add(user)
+    await db.flush()  # Get the UUID assigned before notifications
+
+    # Notify all assistant wardens
+    await notify_all_by_role(
+        role=UserRole.assistant_warden,
+        title="New Registration Pending",
+        body=f"Student '{payload.name}' (Room {payload.room_number}) has registered and requires verification.",
+        notification_type=NotificationType.registration_pending,
+        db=db,
+    )
+
+    return UserRead(
+        id=str(user.id),
+        name=user.name,
+        room_number=user.room_number,
+        role=user.role,
+        hostel_mode=user.hostel_mode,
+        is_verified=user.is_verified,
+        is_active=user.is_active,
+        created_at=user.created_at,
+    )
+
+async def login_user(payload, db: AsyncSession):
+    from schemas.auth import Token
+    result = await db.execute(
+        select(User).where(User.room_number == payload.room_number)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect room number or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account not yet verified. Please wait for Assistant Warden approval.",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account has been deactivated. Please contact the warden.",
+        )
+
+    token_data = {"sub": str(user.id), "role": user.role.value}
+    return Token(
+        access_token=create_access_token(token_data),
+        refresh_token=create_refresh_token(token_data),
+        token_type="bearer",
+    )
+

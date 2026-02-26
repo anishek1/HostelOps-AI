@@ -38,46 +38,32 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const TOKEN_KEY = 'hostelops_token';
-
-// ---------------------------------------------------------------------------
+// No local storage definitions needed// ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<UserRead | null>(null);
     const [token, setToken] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false); // No need to load from local storage
 
-    // Restore session on mount
-    useEffect(() => {
-        const stored = localStorage.getItem(TOKEN_KEY);
-        if (stored) {
-            getMe(stored)
-                .then((u) => {
-                    setToken(stored);
-                    setUser(u);
-                })
-                .catch(() => {
-                    localStorage.removeItem(TOKEN_KEY);
-                })
-                .finally(() => setIsLoading(false));
-        } else {
+    const login = useCallback(async (credentials: LoginRequest) => {
+        setIsLoading(true);
+        try {
+            const tokenData = await apiLogin(credentials);
+            const accessToken = tokenData.access_token;
+            setToken(accessToken);
+
+
+
+            const userProfile = await getMe(accessToken);
+            setUser(userProfile);
+        } finally {
             setIsLoading(false);
         }
     }, []);
 
-    const login = useCallback(async (credentials: LoginRequest) => {
-        const tokenData = await apiLogin(credentials);
-        const accessToken = tokenData.access_token;
-        const userProfile = await getMe(accessToken);
-        localStorage.setItem(TOKEN_KEY, accessToken);
-        setToken(accessToken);
-        setUser(userProfile);
-    }, []);
-
     const logout = useCallback(() => {
-        localStorage.removeItem(TOKEN_KEY);
         setToken(null);
         setUser(null);
     }, []);

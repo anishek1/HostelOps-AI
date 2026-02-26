@@ -7,7 +7,12 @@ All other files import from here.
 """
 
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# Absolute path to the directory containing this file (backend/)
+BASE_DIR = Path(__file__).resolve().parent
 
 
 class Settings(BaseSettings):
@@ -48,7 +53,10 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {
+        "env_file": str(BASE_DIR / ".env"),  # absolute path — works from any working directory
+        "extra": "ignore",
+    }
 
 
 @lru_cache
