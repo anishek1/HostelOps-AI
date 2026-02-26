@@ -1,0 +1,57 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Alembic
+migrations/versions/__pycache__/
+
+# Node / Frontend
+node_modules/
+dist/
+frontend/dist/
+.pnp
+.pnp.js
+frontend/node_modules/
+
+# Coverage
+htmlcov/
+.coverage
+*.cover
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+celerybeat-schedule
+
+# Secrets
+*.pem
+*.key
