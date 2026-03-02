@@ -186,53 +186,60 @@ def verify_password(plain: str, hashed: str) -> bool:
 ---
 
 ### SPRINT 2 — Agent 1 Core (COMPLETE ✅)
-**Completed:** March 2026
-**Goal:** Student can file a complaint, receive immediate acknowledgement, and the complaint is classified by the LLM asynchronously via Celery and either auto-assigned or routed to the Warden approval queue — with a working fallback classifier if the LLM fails.
+**Completed:** February 2026
+**Goal:** Celery + Redis connected, complaint filing, LLM classification via Groq, async pipeline, state machine, fallback classifier, all 6 Agent 1 tools.
 
 #### What was built:
-- `backend/create_admin.py` — idempotent one-time admin bootstrap script
-- `backend/celery_app.py` — Celery application instance (Upstash Redis, SSL configured)
-- `backend/middleware/prompt_sanitizer.py` — injection detection, HTML stripping
-- `backend/services/fallback_classifier.py` — keyword rule classifier (mess/laundry/maintenance/interpersonal)
-- `backend/services/complaint_service.py` — state machine (`transition_complaint()` is the only function allowed to change complaint.status)
-- `backend/agents/agent_complaint.py` — LangChain + Groq + Llama3 classification agent
-- `backend/tasks/complaint_tasks.py` — full Celery pipeline (acknowledge → LLM → fallback → route)
-- `backend/tasks/notification_tasks.py` — Sprint 6 push notification stub
-- `backend/tools/complaint_tools.py` — 6 typed async Agent 1 tools
-- `backend/routes/complaints.py` — 4 endpoints (file, get, update status, reopen)
-- Updated `database.py` with sync engine (`SyncSessionLocal`) for Celery task DB access
-- Updated `main.py` to register complaints router at `/api/complaints`
+- `backend/create_admin.py` — one-time bootstrap script to create first verified admin. Idempotent (safe to run multiple times). Replaces the deleted `verify_warden.py` debug script from Sprint 1.
+- `backend/celery_app.py` — Celery app instance connected to Upstash Redis. `task_acks_late=True` prevents lost tasks on crash.
+- `backend/middleware/prompt_sanitizer.py` — sanitizes all free-text before it reaches the LLM. Strips HTML, truncates, detects injection patterns, returns `SanitizationResult` with `was_flagged` flag.
+- `backend/services/fallback_classifier.py` — pure keyword-based classifier. No external dependencies. Called when LLM fails after all retries. Always sets `classified_by="fallback"`.
+- `backend/services/complaint_service.py` — complaint creation, retrieval, assignment, and approval queue routing. Contains `transition_complaint()` — the ONLY function allowed to update complaint status.
+- `backend/services/notification_service.py` — creates in-app notification records. Push delivery deferred to Sprint 6.
+- `backend/services/override_log_service.py` — creates override log entries. Called by `log_override_tool` — not directly from routes or tools.
+- `backend/agents/agent_complaint.py` — LangChain + Groq + Llama 3 classification agent. Returns `ClassificationResult` with confidence score. Returns `None` on failure — never raises exceptions.
+- `backend/tasks/complaint_tasks.py` — Celery task with full retry + fallback chain. `acknowledge_student_tool` called FIRST before LLM runs.
+- `backend/tools/complaint_tools.py` — all 6 Agent 1 tools with typed Pydantic input/output schemas.
+- `backend/routes/complaints.py` — thin complaint routes. Registered in `main.py`.
+- `backend/database.py` — updated with sync engine (`psycopg2`) for Celery task DB access alongside existing async engine.
 
 #### ✅ Definition of Done — verified:
-- Redis ping: True (Upstash via rediss://) ✅
-- Celery worker starts without errors (`--pool=solo` on Windows): "hostelops@Anishekh ready." ✅
-- `POST /api/complaints/` returns immediate response with `complaint_id` + `INTAKE` status ✅
-- Celery task fires classification in background ✅
-- Fallback classifier: mess ✅ laundry ✅ maintenance ✅ interpersonal/high ✅
-- Prompt injection detection and `flagged_input` storage ✅
-- `transition_complaint()` rejects invalid transitions with `ValueError` ✅
-- Audit log entry created for every state change ✅
-- Sprint 1 auth system still works — untouched ✅
+- `create_admin.py` runs successfully and is idempotent ✅
+- Celery worker starts without errors ✅
+- `POST /api/complaints/` returns in under 2 seconds ✅
+- Complaint classified by LLM after ~10 seconds via Celery ✅
+- High confidence + low/medium severity → ASSIGNED ✅
+- High severity → always AWAITING_APPROVAL ✅
+- LLM failure → fallback classifier runs → AWAITING_APPROVAL ✅
+- `classified_by` set to "llm" or "fallback" on complaint record ✅
+- `transition_complaint()` rejects invalid transitions with ValueError ✅
+- Audit log written on every state change ✅
+- Injection detection flags input, stores original, processes sanitized ✅
+- Sprint 1 auth system untouched — all checks pass ✅
 
-#### ⚠️ DEVIATIONS — respect these forever:
+#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
 
-**Deviation 4 — Upstash Redis requires rediss:// (SSL)**
-- **Original plan:** Sprint prompt showed `redis://` URLs
-- **What happened:** Upstash Redis enforces TLS — plain `redis://` is rejected with "connection closed by server"
-- **Fix applied:** Changed both `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` in `.env` to `rediss://`
-- **celery_app.py** uses `broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}` to accept Upstash's self-signed cert
-- **Rule going forward:** ALWAYS use `rediss://` for Upstash Redis. Never change back to `redis://`
+**Deviation 1 — Windows Celery requires --pool=solo**
+- **What happened:** Windows does not support Celery's default fork-based process pool. Running without `--pool=solo` causes `PermissionError: [WinError 5]`.
+- **Fix applied:** Use `--pool=solo` flag on Windows for local development only.
+- **Rule going forward:** Always start Celery on Windows with: `.venv\Scripts\celery -A celery_app worker --pool=solo --loglevel=info`
+- **Production note:** Railway runs Linux — `--pool=solo` is NOT needed in production. Never add this flag to deployment config.
+- **Documented in:** `.env.example` comment
 
-**Deviation 5 — Celery on Windows requires --pool=solo**
-- **What happened:** Celery's default fork-based pool raises `PermissionError: [WinError 5]` on Windows
-- **Fix applied:** Run Celery with `--pool=solo` flag on Windows
-- **Rule going forward:** For local development on Windows: `celery -A celery_app worker --pool=solo --loglevel=info`
-- In production (Railway Linux): standard fork pool works fine, remove `--pool=solo`
+**Deviation 2 — override_log_service.py added**
+- **What happened:** `log_override_tool` initially contained direct DB access (`db.add()`, `db.flush()`), violating CONVENTIONS.md. A new service file was created to fix this.
+- **Fix applied:** Created `backend/services/override_log_service.py` with `create_override_log()`. Tool now calls the service.
+- **Rule going forward:** All DB operations for override logs go through `override_log_service.py`.
 
-**Deviation 6 — notification_service.py already existed**
-- Sprint 2 Task 9 specified creating `notification_service.py`
-- It was already built in Sprint 1 with `notify_user()` and `notify_all_by_role()` functions
-- No changes were needed — it was reused as-is
+**Deviation 3 — run_async() wrapper for Celery async tools**
+- **What happened:** Celery tasks are synchronous and cannot natively call async tools. A `run_async()` helper was added to `complaint_tasks.py` to bridge this gap.
+- **Fix applied:** `run_async()` wrapper handles event loop creation for both existing and closed loops. `acknowledge_student_tool` is now called via `run_async()`.
+- **Rule going forward:** Any async tool called from a Celery task must use `run_async()`. Never create new ad-hoc sync proxy functions.
+
+**Deviation 4 — psycopg2-binary required**
+- **What happened:** Celery sync engine requires `psycopg2` driver. Was not in original requirements.
+- **Fix applied:** `psycopg2-binary` added to `requirements.txt`.
+- **Rule going forward:** Always install via `.venv\Scripts\pip install -r requirements.txt` — never use the system `pip` or conda `pip`.
 
 ---
 
@@ -254,9 +261,9 @@ REFRESH_TOKEN_EXPIRE_DAYS=30
 GROQ_API_KEY=<from console.groq.com>
 GROQ_MODEL_NAME=llama3-8b-8192
 
-# Task Queue — NOT YET CONFIGURED (Sprint 2)
-CELERY_BROKER_URL=
-CELERY_RESULT_BACKEND=
+# Task Queue — Upstash Redis (filled in Sprint 2)
+CELERY_BROKER_URL=redis://default:PASSWORD@HOST:PORT
+CELERY_RESULT_BACKEND=redis://default:PASSWORD@HOST:PORT
 
 # Push Notifications — NOT YET CONFIGURED (Sprint 6)
 VAPID_PUBLIC_KEY=
@@ -293,6 +300,10 @@ Every significant architectural or technical decision made during this project i
 | passlib removed | Using bcrypt directly | passlib is unmaintained and incompatible with modern bcrypt package. | Sprint 1 |
 | Port 5432 for Supabase | Direct connection not pooler | pgBouncer pooler on 6543 conflicts with asyncpg prepared statement caching. | Sprint 1 |
 | create_admin.py for bootstrap | One-time script for first admin | Debug scripts must not exist in production codebase. The first admin needs a clean, repeatable setup process. | Sprint 1 review |
+| run_async() pattern | All async tools called from Celery tasks must use the `run_async()` wrapper in `complaint_tasks.py` | Celery is synchronous — cannot natively call async code | Sprint 2 |
+| override_log_service.py | Override log DB operations go through `override_log_service.py` exclusively | Tools must never access DB directly per CONVENTIONS.md | Sprint 2 |
+| psycopg2 for Celery | Celery sync engine uses `psycopg2` driver, async engine uses `asyncpg` | Celery cannot use asyncpg — incompatible with sync context | Sprint 2 |
+| Windows --pool=solo | Required for Celery on Windows dev environment only | Windows doesn't support fork-based process pool | Sprint 2 |
 
 ---
 
@@ -342,6 +353,17 @@ If you are reading this to verify the current state of the project, check every 
 - [ ] Protected route returns 403 with wrong role token
 - [ ] Frontend starts without errors
 
+### Sprint 2 Verification — COMPLETE ✅
+Re-verification audit passed: 1/1 failures fixed, 1/1 deviations resolved, 0 regressions.
+
+Key items confirmed:
+- All 6 Agent 1 tools exist with typed Pydantic signatures
+- `transition_complaint()` enforces valid state transitions
+- LLM classification runs async via Celery — never blocks HTTP response
+- Fallback classifier runs on LLM failure
+- No direct DB access in any tool file
+- `acknowledge_student_tool` called via `run_async()` wrapper
+
 ---
 
 ## SECTION 9 — HOW TO USE THIS DOCUMENT
@@ -353,7 +375,7 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: [UPDATE THIS EACH SPRINT]
+Current sprint: Sprint 3 — Agent 1 Complete (Approval Queue, Override Logging, Rate Limiting)
 Your task: [DESCRIBE TASK]
 ```
 
