@@ -185,6 +185,57 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 ---
 
+### SPRINT 2 — Agent 1 Core (COMPLETE ✅)
+**Completed:** March 2026
+**Goal:** Student can file a complaint, receive immediate acknowledgement, and the complaint is classified by the LLM asynchronously via Celery and either auto-assigned or routed to the Warden approval queue — with a working fallback classifier if the LLM fails.
+
+#### What was built:
+- `backend/create_admin.py` — idempotent one-time admin bootstrap script
+- `backend/celery_app.py` — Celery application instance (Upstash Redis, SSL configured)
+- `backend/middleware/prompt_sanitizer.py` — injection detection, HTML stripping
+- `backend/services/fallback_classifier.py` — keyword rule classifier (mess/laundry/maintenance/interpersonal)
+- `backend/services/complaint_service.py` — state machine (`transition_complaint()` is the only function allowed to change complaint.status)
+- `backend/agents/agent_complaint.py` — LangChain + Groq + Llama3 classification agent
+- `backend/tasks/complaint_tasks.py` — full Celery pipeline (acknowledge → LLM → fallback → route)
+- `backend/tasks/notification_tasks.py` — Sprint 6 push notification stub
+- `backend/tools/complaint_tools.py` — 6 typed async Agent 1 tools
+- `backend/routes/complaints.py` — 4 endpoints (file, get, update status, reopen)
+- Updated `database.py` with sync engine (`SyncSessionLocal`) for Celery task DB access
+- Updated `main.py` to register complaints router at `/api/complaints`
+
+#### ✅ Definition of Done — verified:
+- Redis ping: True (Upstash via rediss://) ✅
+- Celery worker starts without errors (`--pool=solo` on Windows): "hostelops@Anishekh ready." ✅
+- `POST /api/complaints/` returns immediate response with `complaint_id` + `INTAKE` status ✅
+- Celery task fires classification in background ✅
+- Fallback classifier: mess ✅ laundry ✅ maintenance ✅ interpersonal/high ✅
+- Prompt injection detection and `flagged_input` storage ✅
+- `transition_complaint()` rejects invalid transitions with `ValueError` ✅
+- Audit log entry created for every state change ✅
+- Sprint 1 auth system still works — untouched ✅
+
+#### ⚠️ DEVIATIONS — respect these forever:
+
+**Deviation 4 — Upstash Redis requires rediss:// (SSL)**
+- **Original plan:** Sprint prompt showed `redis://` URLs
+- **What happened:** Upstash Redis enforces TLS — plain `redis://` is rejected with "connection closed by server"
+- **Fix applied:** Changed both `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` in `.env` to `rediss://`
+- **celery_app.py** uses `broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}` to accept Upstash's self-signed cert
+- **Rule going forward:** ALWAYS use `rediss://` for Upstash Redis. Never change back to `redis://`
+
+**Deviation 5 — Celery on Windows requires --pool=solo**
+- **What happened:** Celery's default fork-based pool raises `PermissionError: [WinError 5]` on Windows
+- **Fix applied:** Run Celery with `--pool=solo` flag on Windows
+- **Rule going forward:** For local development on Windows: `celery -A celery_app worker --pool=solo --loglevel=info`
+- In production (Railway Linux): standard fork pool works fine, remove `--pool=solo`
+
+**Deviation 6 — notification_service.py already existed**
+- Sprint 2 Task 9 specified creating `notification_service.py`
+- It was already built in Sprint 1 with `notify_user()` and `notify_all_by_role()` functions
+- No changes were needed — it was reused as-is
+
+---
+
 ## SECTION 6 — ENVIRONMENT VARIABLES
 
 All variables live in `/backend/.env` (not committed). `/backend/.env.example` is committed with all names but no values.
@@ -250,6 +301,8 @@ Every significant architectural or technical decision made during this project i
 If you are reading this to verify the current state of the project, check every item below against the actual codebase. Report exactly: ✅ PASS, ❌ FAIL, or ⚠️ DEVIATION (with explanation).
 
 ### Sprint 1 Verification
+
+**Re-verification:** PASS — 4/4 failures fixed, 2/2 deviations resolved, 0 regressions
 
 **Structure:**
 - [ ] `/backend/config.py` exists and uses `BASE_DIR = Path(__file__).resolve().parent` for absolute .env path
