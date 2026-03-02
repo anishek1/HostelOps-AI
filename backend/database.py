@@ -48,3 +48,22 @@ async def get_db() -> AsyncSession:
         except Exception:
             await session.rollback()
             raise
+
+
+# ---------------------------------------------------------------------------
+# Sync engine — for Celery tasks ONLY
+# ---------------------------------------------------------------------------
+# Celery workers cannot use async SQLAlchemy sessions.
+# Use SyncSessionLocal() exclusively inside Celery task functions.
+# Never use this in FastAPI routes or services.
+
+from sqlalchemy import create_engine          # noqa: E402
+from sqlalchemy.orm import sessionmaker        # noqa: E402
+
+sync_engine = create_engine(
+    settings.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2"),
+    pool_pre_ping=True,
+)
+
+SyncSessionLocal = sessionmaker(bind=sync_engine, autocommit=False, autoflush=False)
+

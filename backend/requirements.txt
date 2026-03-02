@@ -21,6 +21,10 @@ python-dotenv==1.0.1
 # Task Queue
 celery==5.4.0
 redis==5.2.1
+kombu==5.3.4
+
+# Sync DB driver for Celery tasks (asyncpg is async-only)
+psycopg2-binary==2.9.10
 
 # LLM / Agents
 langchain==0.3.18

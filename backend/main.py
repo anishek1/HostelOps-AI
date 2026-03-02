@@ -56,9 +56,11 @@ app.add_middleware(
 
 from routes.auth import router as auth_router        # noqa: E402
 from routes.users import router as users_router      # noqa: E402
+from routes.complaints import router as complaints_router  # noqa: E402
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
+app.include_router(complaints_router, prefix="/api/complaints", tags=["Complaints"])
 
 
 # ---------------------------------------------------------------------------
