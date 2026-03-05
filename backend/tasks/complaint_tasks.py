@@ -10,6 +10,7 @@ import logging
 import uuid
 
 from celery_app import celery_app
+from config import settings
 from database import SyncSessionLocal
 from schemas.enums import (
     ClassifiedBy,
@@ -19,6 +20,7 @@ from schemas.enums import (
     NotificationType,
     UserRole,
 )
+from services.complaint_service import VALID_TRANSITIONS
 
 import asyncio
 
@@ -114,17 +116,7 @@ def _transition_complaint_sync(
     from models.complaint import Complaint
     from models.audit_log import AuditLog
 
-    # Validate transition
-    VALID_TRANSITIONS = {
-        ComplaintStatus.INTAKE: [ComplaintStatus.CLASSIFIED, ComplaintStatus.ESCALATED],
-        ComplaintStatus.CLASSIFIED: [ComplaintStatus.ASSIGNED, ComplaintStatus.AWAITING_APPROVAL],
-        ComplaintStatus.AWAITING_APPROVAL: [ComplaintStatus.ASSIGNED, ComplaintStatus.ESCALATED],
-        ComplaintStatus.ASSIGNED: [ComplaintStatus.IN_PROGRESS, ComplaintStatus.ESCALATED],
-        ComplaintStatus.IN_PROGRESS: [ComplaintStatus.RESOLVED],
-        ComplaintStatus.RESOLVED: [ComplaintStatus.REOPENED],
-        ComplaintStatus.REOPENED: [ComplaintStatus.ASSIGNED],
-        ComplaintStatus.ESCALATED: [ComplaintStatus.ASSIGNED],
-    }
+    # Validate transition (VALID_TRANSITIONS imported from complaint_service.py)
     allowed = VALID_TRANSITIONS.get(from_state, [])
     if to_state not in allowed:
         raise ValueError(f"Invalid transition: {from_state.value} → {to_state.value}")
@@ -290,7 +282,7 @@ def classify_and_route_complaint(self, complaint_id: str):
             session.flush()
 
             # Step 5/6 — Route based on confidence and severity
-            threshold = 0.85  # From settings (avoid async call here)
+            threshold = settings.COMPLAINT_CONFIDENCE_THRESHOLD
             needs_approval = (
                 severity == ComplaintSeverity.high
                 or confidence < threshold

@@ -1,57 +1,32 @@
-# Environment
-.env
-.env.local
-.env.*.local
-
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-ENV/
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
+*.pyo
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
+*.egg-info/
 
-# Alembic
-migrations/versions/__pycache__/
+# Environment
+.env
+.env.local
 
-# Node / Frontend
-node_modules/
-dist/
-frontend/dist/
-.pnp
-.pnp.js
-frontend/node_modules/
+# Logs
+*.log
+logs/
 
-# Coverage
-htmlcov/
-.coverage
-*.cover
-coverage.xml
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
-.DS_Store
-Thumbs.db
 
-# Logs
-*.log
-logs/
-celerybeat-schedule
+# Node
+node_modules/
+dist/
+.next/
 
-# Secrets
-*.pem
-*.key
+# Build
+*.egg
+*.whl

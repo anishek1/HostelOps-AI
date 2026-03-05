@@ -237,7 +237,14 @@ async def assign_complaint(
     # Normalise to CLASSIFIED for transition if still in INTAKE
     # (sprint prompt allows INTAKE → ASSIGNED via service, not via machine directly)
     if from_state == ComplaintStatus.INTAKE:
-        complaint.status = ComplaintStatus.CLASSIFIED
+        await transition_complaint(
+            complaint_id=complaint_id,
+            from_state=ComplaintStatus.INTAKE,
+            to_state=ComplaintStatus.CLASSIFIED,
+            triggered_by="system",
+            db=db,
+            note="Auto-classified before assignment",
+        )
         from_state = ComplaintStatus.CLASSIFIED
 
     await transition_complaint(
@@ -296,8 +303,14 @@ async def send_to_approval_queue(
     # Transition to AWAITING_APPROVAL
     from_state = complaint.status
     if from_state == ComplaintStatus.INTAKE:
-        # Temporarily move to CLASSIFIED so the transition is valid
-        complaint.status = ComplaintStatus.CLASSIFIED
+        await transition_complaint(
+            complaint_id=complaint_id,
+            from_state=ComplaintStatus.INTAKE,
+            to_state=ComplaintStatus.CLASSIFIED,
+            triggered_by="system",
+            db=db,
+            note="Auto-classified before approval queue",
+        )
         from_state = ComplaintStatus.CLASSIFIED
 
     await transition_complaint(

@@ -5,18 +5,15 @@ User management routes: verify, deactivate, me.
 Routes are thin — all logic delegated to services.
 """
 
-import uuid
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.user import User
-from schemas.enums import NotificationType, UserRole
+from schemas.enums import UserRole
 from schemas.user import UserRead
 from services.auth_service import get_current_user, require_role
-from services.notification_service import notify_user
+from services.user_service import verify_user_account, deactivate_user_account
 
 router = APIRouter()
 
@@ -48,33 +45,8 @@ async def verify_user(
     """
     Activate a pending student account.
     Requires: assistant_warden or warden role.
-    Notifies the student that their account is now active.
     """
-    try:
-        uid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid user ID format.")
-
-    result = await db.execute(select(User).where(User.id == uid))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
-    if user.is_verified:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already verified.")
-
-    user.is_verified = True
-
-    # Notify the student
-    await notify_user(
-        recipient_id=user.id,
-        title="Account Verified",
-        body="Your account has been verified. You can now log in to HostelOps AI.",
-        notification_type=NotificationType.complaint_resolved,  # Using best-fit type; extend in future sprint
-        db=db,
-    )
-
+    user = await verify_user_account(user_id=user_id, db=db)
     return UserRead(
         id=str(user.id),
         name=user.name,
@@ -96,24 +68,8 @@ async def deactivate_user(
     """
     Deactivate a student account (e.g., when student vacates).
     Requires: assistant_warden or warden role.
-    Deactivated users cannot log in.
     """
-    try:
-        uid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid user ID format.")
-
-    result = await db.execute(select(User).where(User.id == uid))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already deactivated.")
-
-    user.is_active = False
-
+    user = await deactivate_user_account(user_id=user_id, db=db)
     return UserRead(
         id=str(user.id),
         name=user.name,
@@ -124,3 +80,4 @@ async def deactivate_user(
         is_active=user.is_active,
         created_at=user.created_at,
     )
+

@@ -28,6 +28,7 @@ psycopg2-binary==2.9.10
 
 # LLM / Agents
 langchain==0.3.18
+langchain-core==0.3.35
 langchain-groq==0.2.4
 
 # Push Notifications

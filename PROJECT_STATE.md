@@ -202,6 +202,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 - `backend/tools/complaint_tools.py` — all 6 Agent 1 tools with typed Pydantic input/output schemas.
 - `backend/routes/complaints.py` — thin complaint routes. Registered in `main.py`.
 - `backend/database.py` — updated with sync engine (`psycopg2`) for Celery task DB access alongside existing async engine.
+- `backend/services/user_service.py` — user verification and deactivation logic. Added post-sprint to thin out routes/users.py per CONVENTIONS.md.
 
 #### ✅ Definition of Done — verified:
 - `create_admin.py` runs successfully and is idempotent ✅
@@ -240,6 +241,30 @@ def verify_password(plain: str, hashed: str) -> bool:
 - **What happened:** Celery sync engine requires `psycopg2` driver. Was not in original requirements.
 - **Fix applied:** `psycopg2-binary` added to `requirements.txt`.
 - **Rule going forward:** Always install via `.venv\Scripts\pip install -r requirements.txt` — never use the system `pip` or conda `pip`.
+
+#### 🔧 Post-Sprint Fixes (Ultimate Verification)
+Applied after ultimate verification audit. All blocking issues resolved.
+
+**Fix 1 — Hardcoded confidence threshold removed**
+- `complaint_tasks.py` now uses `settings.COMPLAINT_CONFIDENCE_THRESHOLD` — not hardcoded `0.85`
+
+**Fix 2 — user_service.py created**
+- New file: `backend/services/user_service.py` with `verify_user()` and `deactivate_user()`
+- `routes/users.py` is now thin — delegates to user_service
+- Direct `user.is_verified` and `user.is_active` assignments removed from routes
+
+**Fix 3 — VALID_TRANSITIONS is now single source of truth**
+- Defined only in `complaint_service.py`
+- `complaint_tasks.py` imports it — no local duplicate
+
+**Fix 4 — Status normalization bypass fixed**
+- `assign_complaint()` and `send_to_approval_queue()` now use `transition_complaint()` for INTAKE→CLASSIFIED step
+- `complaint.status =` assignment exists ONLY inside `transition_complaint()`
+
+**Fix 5 — Cosmetic fixes**
+- Stale localStorage comment removed from `AuthContext.tsx`
+- `langchain-core==0.3.35` explicitly pinned in `requirements.txt`
+- Unused `useEffect` import removed from `AuthContext.tsx`
 
 ---
 
@@ -304,6 +329,7 @@ Every significant architectural or technical decision made during this project i
 | override_log_service.py | Override log DB operations go through `override_log_service.py` exclusively | Tools must never access DB directly per CONVENTIONS.md | Sprint 2 |
 | psycopg2 for Celery | Celery sync engine uses `psycopg2` driver, async engine uses `asyncpg` | Celery cannot use asyncpg — incompatible with sync context | Sprint 2 |
 | Windows --pool=solo | Required for Celery on Windows dev environment only | Windows doesn't support fork-based process pool | Sprint 2 |
+| user_service.py | All user management logic (verify, deactivate) lives in `user_service.py` | Routes must never contain business logic per CONVENTIONS.md | Ultimate Verification |
 
 ---
 
@@ -375,7 +401,7 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 3 — Agent 1 Complete (Approval Queue, Override Logging, Rate Limiting)
+Current sprint: Ultimate Verification complete — human checks pending. Sprint 3 begins after human checks pass.
 Your task: [DESCRIBE TASK]
 ```
 
@@ -409,3 +435,4 @@ Paste this entire document into the new AI and say:
 8. **Never commit `.env`** under any circumstances.
 9. **Always update PROJECT_STATE.md** at the end of every sprint before starting the next.
 10. **Always reference PRD.md and CONVENTIONS.md** before writing any new code.
+11. **VALID_TRANSITIONS is defined only in `complaint_service.py`.** Any other file that needs to check valid transitions must import from there — never redefine it locally.

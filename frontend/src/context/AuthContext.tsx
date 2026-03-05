@@ -1,14 +1,13 @@
 /**
  * context/AuthContext.tsx — HostelOps AI
  * Manages authentication state: current user, JWT token, login/logout.
- * Restores session from localStorage on app load.
+ * Token stored in React useState (memory only) — never persisted to storage.
  */
 
 import React, {
     createContext,
     useCallback,
     useContext,
-    useEffect,
     useMemo,
     useState,
 } from 'react';
