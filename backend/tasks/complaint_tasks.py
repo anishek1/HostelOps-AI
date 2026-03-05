@@ -8,6 +8,8 @@ Implements full retry policy and fallback chain from PRD.md Section 10.
 import asyncio
 import logging
 import uuid
+import logging
+logger = logging.getLogger(__name__)
 
 from celery_app import celery_app
 from config import settings

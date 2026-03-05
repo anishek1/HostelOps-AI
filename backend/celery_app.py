@@ -5,6 +5,10 @@ Celery application instance.
 Import this in tasks to get the celery app.
 Never import this in routes or services directly.
 """
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from celery import Celery
 from config import settings
 
