@@ -217,6 +217,13 @@ def verify_password(plain: str, hashed: str) -> bool:
 - Audit log written on every state change ✅
 - Injection detection flags input, stores original, processes sanitized ✅
 - Sprint 1 auth system untouched — all checks pass ✅
+- LLM classification working with `llama-3.3-70b-versatile` ✅
+- Fallback classifier runs when LLM fails ✅
+- Injection detection flags input correctly ✅
+- State machine rejects invalid transitions with HTTP 400 ✅
+- Students cannot access other students' complaints (HTTP 403) ✅
+- High severity complaints always routed to AWAITING_APPROVAL ✅
+- Celery pipeline fully tested end to end ✅
 
 #### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
 
@@ -266,11 +273,38 @@ Applied after ultimate verification audit. All blocking issues resolved.
 - `langchain-core==0.3.35` explicitly pinned in `requirements.txt`
 - Unused `useEffect` import removed from `AuthContext.tsx`
 
+**Deviation 5 — logger not defined in complaint_tasks.py**
+- **What happened:** `complaint_tasks.py` used `logger.info()` throughout but never imported or defined `logger`, causing `NameError: name 'logger' is not defined` on every task run.
+- **Fix applied:** Added at the very top of `complaint_tasks.py`:
+  ```python
+  import logging
+  logger = logging.getLogger(__name__)
+  ```
+- **Rule going forward:** Every file that uses logging must define `logger = logging.getLogger(__name__)` at module level. Never call `logger` without defining it first.
+
+**Deviation 6 — Celery cannot find /tools module (sys.path issue)**
+- **What happened:** Celery worker could not import `from tools.complaint_tools import ...` because Python's sys.path did not include the backend directory when Celery started.
+- **Fix applied:** Added to the very top of `celery_app.py` before all other imports:
+  ```python
+  import sys
+  import os
+  sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+  ```
+- **Rule going forward:** This sys.path fix must remain at the top of `celery_app.py` permanently. Never remove it. Any new Celery worker file must include the same fix.
+
+**Deviation 7 — Groq model llama3-8b-8192 decommissioned**
+- **What happened:** Groq decommissioned `llama3-8b-8192`. All LLM calls were failing with `model_decommissioned` error, causing the fallback classifier to run for every complaint.
+- **Fix applied:** Updated `GROQ_MODEL_NAME` in `.env` and `.env.example` to `llama-3.3-70b-versatile`.
+- **Rule going forward:** If LLM calls start failing with model errors, check https://console.groq.com/docs/deprecations for the latest supported model and update `GROQ_MODEL_NAME` in `.env`. Never hardcode the model name — always use `settings.GROQ_MODEL_NAME`.
+- **Current working model:** `llama-3.3-70b-versatile`
+
 ---
 
 ## SECTION 6 — ENVIRONMENT VARIABLES
 
 All variables live in `/backend/.env` (not committed). `/backend/.env.example` is committed with all names but no values.
+**Note:** `.env.example` lives at `backend/.env.example` (NOT project root — see Deviation 2 from Sprint 1).
+The file includes a comment about Windows Celery: use `--pool=solo` flag locally.
 
 ```env
 # Database — ALWAYS port 5432, never 6543 (see Deviation 2 above)
@@ -283,8 +317,10 @@ ACCESS_TOKEN_EXPIRE_HOURS=24
 REFRESH_TOKEN_EXPIRE_DAYS=30
 
 # LLM — free tier, open-source model
+# IMPORTANT: llama3-8b-8192 was decommissioned by Groq in March 2026
+# Current working model as of Sprint 2 completion:
 GROQ_API_KEY=<from console.groq.com>
-GROQ_MODEL_NAME=llama3-8b-8192
+GROQ_MODEL_NAME=llama-3.3-70b-versatile
 
 # Task Queue — Upstash Redis (filled in Sprint 2)
 CELERY_BROKER_URL=redis://default:PASSWORD@HOST:PORT
@@ -330,6 +366,9 @@ Every significant architectural or technical decision made during this project i
 | psycopg2 for Celery | Celery sync engine uses `psycopg2` driver, async engine uses `asyncpg` | Celery cannot use asyncpg — incompatible with sync context | Sprint 2 |
 | Windows --pool=solo | Required for Celery on Windows dev environment only | Windows doesn't support fork-based process pool | Sprint 2 |
 | user_service.py | All user management logic (verify, deactivate) lives in `user_service.py` | Routes must never contain business logic per CONVENTIONS.md | Ultimate Verification |
+| sys.path fix in celery_app.py | `sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))` at top of `celery_app.py` | Celery worker starts from a different working directory and cannot find backend modules without this | Human checks phase |
+| logging pattern | Every file using `logger` must define `logger = logging.getLogger(__name__)` at module level | Prevents NameError at runtime — learned from complaint_tasks.py failure | Human checks phase |
+| Groq model versioning | `GROQ_MODEL_NAME` in `.env` controls the model — never hardcoded | Groq decommissions models without much notice — must be configurable | Human checks phase |
 
 ---
 
@@ -390,6 +429,26 @@ Key items confirmed:
 - No direct DB access in any tool file
 - `acknowledge_student_tool` called via `run_async()` wrapper
 
+### Human Checks — Sprint 1 + Sprint 2 Combined (COMPLETE ✅)
+All 9 human checks passed on March 5, 2026.
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| git log — .env never committed | ✅ PASS | No .env in git history |
+| All 10 tables in database | ✅ PASS | All tables confirmed in Supabase |
+| JWT contains role claim | ✅ PASS | Payload: sub, role, exp, type |
+| Celery starts cleanly | ✅ PASS | Connected to Upstash Redis, ready |
+| Injection detection | ✅ PASS | flagged_input populated, [removed] in sanitized_text |
+| Invalid state transition rejected | ✅ PASS | HTTP 400 with allowed transitions listed |
+| Cross-student access blocked | ✅ PASS | HTTP 403 for unauthorized access |
+| High severity routing | ✅ PASS | interpersonal/high → AWAITING_APPROVAL |
+| Fallback classifier | ✅ PASS | classified_by=fallback, category=laundry |
+
+Issues found and fixed during human checks:
+1. `logger` not defined in `complaint_tasks.py` → fixed with `logging.getLogger(__name__)`
+2. Celery sys.path not including backend → fixed with sys.path.insert in `celery_app.py`
+3. Groq model `llama3-8b-8192` decommissioned → updated to `llama-3.3-70b-versatile`
+
 ---
 
 ## SECTION 9 — HOW TO USE THIS DOCUMENT
@@ -401,7 +460,10 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Ultimate Verification complete — human checks pending. Sprint 3 begins after human checks pass.
+Current sprint: Sprint 3 — Agent 1 Complete
+Sprint 1: ✅ Complete and verified
+Sprint 2: ✅ Complete, verified, and human-checked (9/9 human checks passed)
+Sprint 3: ⏳ Starting next
 Your task: [DESCRIBE TASK]
 ```
 
@@ -436,3 +498,7 @@ Paste this entire document into the new AI and say:
 9. **Always update PROJECT_STATE.md** at the end of every sprint before starting the next.
 10. **Always reference PRD.md and CONVENTIONS.md** before writing any new code.
 11. **VALID_TRANSITIONS is defined only in `complaint_service.py`.** Any other file that needs to check valid transitions must import from there — never redefine it locally.
+12. **Always define `logger = logging.getLogger(__name__)` at module level** in any file that uses logging. Never call `logger` without defining it.
+13. **Never remove the sys.path fix from `celery_app.py`**. It is required for Celery to find backend modules.
+14. **Never hardcode the Groq model name**. Always use `settings.GROQ_MODEL_NAME`. If a model is decommissioned, update `.env` only.
+15. **Always restore GROQ_API_KEY after fallback testing**. Testing with an invalid key is done in `.env` only — restart both servers after restoring.
