@@ -145,25 +145,4 @@ async def override_suggestion(
 
 def _complaint_to_read(c) -> ComplaintRead:
     """Convert a Complaint ORM instance to ComplaintRead schema."""
-    return ComplaintRead(
-        id=str(c.id),
-        student_id=str(c.student_id),
-        text=c.text,
-        is_anonymous=c.is_anonymous,
-        category=c.category,
-        severity=c.severity,
-        status=c.status,
-        assigned_to=str(c.assigned_to) if c.assigned_to else None,
-        confidence_score=c.confidence_score,
-        ai_suggested_category=c.ai_suggested_category,
-        ai_suggested_assignee=str(c.ai_suggested_assignee) if c.ai_suggested_assignee else None,
-        requires_approval=c.requires_approval,
-        classified_by=c.classified_by,
-        override_reason=c.override_reason,
-        flagged_input=c.flagged_input,
-        resolved_confirmed_at=c.resolved_confirmed_at,
-        reopen_reason=c.reopen_reason,
-        is_priority=c.is_priority,
-        created_at=c.created_at,
-        updated_at=c.updated_at,
-    )
+    return ComplaintRead.model_validate(c)

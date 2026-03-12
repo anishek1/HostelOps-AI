@@ -119,6 +119,7 @@ async def approve_ai_suggestion(
         f"[approval_queue] Approved AI suggestion for complaint {complaint.id} "
         f"by warden {warden_id}"
     )
+    await db.refresh(complaint)
     return complaint
 
 
@@ -215,6 +216,7 @@ async def override_ai_suggestion(
             db=db,
         )
 
+    await db.refresh(complaint)
     return complaint
 
 
@@ -270,4 +272,5 @@ async def escalate_complaint(
         )
 
     logger.info(f"[approval_queue] Escalated complaint {complaint_id} by warden {warden_id}")
+    await db.refresh(complaint)
     return complaint
