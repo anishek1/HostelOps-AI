@@ -30,3 +30,9 @@ dist/
 # Build
 *.egg
 *.whl
+
+files/
+CONVENTIONS.md
+PRD.md
+PROJECT_STATE.md
+SPRINT_2_PROMPT.md
