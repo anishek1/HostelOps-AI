@@ -255,6 +255,8 @@ async def assign_complaint(
         db=db,
         note=f"Assigned to {assignee_id} by {classified_by} classifier",
     )
+    await db.commit()
+    await db.refresh(complaint)
     return complaint
 
 
@@ -321,6 +323,8 @@ async def send_to_approval_queue(
         db=db,
         note=f"Sent to approval queue (confidence={confidence:.2f})",
     )
+    await db.commit()
+    await db.refresh(queue_item)
     return queue_item
 
 
@@ -416,6 +420,8 @@ async def staff_update_progress(
             pass  # Notification failure is non-critical
 
     logger.info(f"[staff_update_progress] {complaint_id}: → {new_status.value} by {staff_id}")
+    await db.commit()
+    await db.refresh(updated)
     return updated
 
 
@@ -456,6 +462,8 @@ async def student_confirm_resolution(
     await db.flush()
 
     logger.info(f"[student_confirm_resolution] {complaint_id}: confirmed by {student_id}")
+    await db.commit()
+    await db.refresh(complaint)
     return complaint
 
 
@@ -524,6 +532,8 @@ async def student_reopen_complaint(
         pass  # Notification failure is non-critical
 
     logger.info(f"[student_reopen_complaint] {complaint_id}: reopened by {student_id}")
+    await db.commit()
+    await db.refresh(complaint)
     return complaint
 
 

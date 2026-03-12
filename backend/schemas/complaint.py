@@ -6,7 +6,8 @@ Pydantic v2 schemas for the Complaint entity.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.dialects.postgresql import UUID
 
 from schemas.enums import (
     ClassifiedBy,
@@ -46,6 +47,11 @@ class ComplaintRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator('id', 'student_id', 'assigned_to', 'ai_suggested_assignee', mode='before')
+    @classmethod
+    def uuid_to_str(cls, v):
+        return str(v) if v is not None else None
+
 
 class ComplaintReadAnonymous(BaseModel):
     """Safe schema for anonymous complaints — omits student_id."""
@@ -66,6 +72,11 @@ class ComplaintReadAnonymous(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('id', 'assigned_to', mode='before')
+    @classmethod
+    def uuid_to_str(cls, v):
+        return str(v) if v is not None else None
 
 
 class ComplaintUpdate(BaseModel):
