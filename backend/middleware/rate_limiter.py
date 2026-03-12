@@ -66,10 +66,14 @@ class RateLimiter:
                 await self.redis.expire(key, window_seconds)
             if current > max_requests:
                 ttl = await self.redis.ttl(key)
+                remaining = max(0, max_requests - current)
+                if action == "complaint":
+                    detail_msg = f"Rate limit exceeded. You can file {remaining} more complaints today."
+                else:
+                    detail_msg = rate_limit_message or f"Rate limit exceeded. Try again in {ttl} seconds."
                 raise HTTPException(
                     status_code=429,
-                    detail=rate_limit_message
-                    or f"Rate limit exceeded. Try again in {ttl} seconds.",
+                    detail=detail_msg,
                 )
         except HTTPException:
             raise  # Re-raise 429 — don't swallow it

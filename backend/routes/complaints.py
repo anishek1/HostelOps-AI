@@ -16,7 +16,7 @@ from typing import List
 from database import get_db
 from models.audit_log import AuditLog
 from models.user import User
-from schemas.complaint import ComplaintCreate, ComplaintRead
+from schemas.complaint import ComplaintCreate, ComplaintRead, ComplaintReadAnonymous
 from schemas.enums import ComplaintStatus, UserRole
 from services.auth_service import get_current_user, require_role
 from services.complaint_service import (
@@ -77,30 +77,28 @@ class ConfirmResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _complaint_to_read(c) -> ComplaintRead:
-    """Convert a Complaint ORM instance to ComplaintRead schema."""
-    return ComplaintRead(
-        id=str(c.id),
-        student_id=str(c.student_id),
-        text=c.text if not c.is_anonymous else "[Anonymous]",
-        is_anonymous=c.is_anonymous,
-        category=c.category,
-        severity=c.severity,
-        status=c.status,
-        assigned_to=str(c.assigned_to) if c.assigned_to else None,
-        confidence_score=c.confidence_score,
-        ai_suggested_category=c.ai_suggested_category,
-        ai_suggested_assignee=str(c.ai_suggested_assignee) if c.ai_suggested_assignee else None,
-        requires_approval=c.requires_approval,
-        classified_by=c.classified_by,
-        override_reason=c.override_reason,
-        flagged_input=c.flagged_input,
-        resolved_confirmed_at=c.resolved_confirmed_at,
-        reopen_reason=c.reopen_reason,
-        is_priority=c.is_priority,
-        created_at=c.created_at,
-        updated_at=c.updated_at,
-    )
+def serialize_complaint(complaint, requesting_user) -> ComplaintRead | ComplaintReadAnonymous:
+    """
+    Returns the correct schema based on anonymity and role.
+    - If not anonymous: always return ComplaintRead (student_id visible)
+    - If anonymous AND requesting user is student: return ComplaintRead (they filed it, they know)
+    - If anonymous AND requesting user is staff (not warden/chief_warden): return ComplaintReadAnonymous (hide student_id)
+    - If anonymous AND requesting user is warden or chief_warden: return ComplaintRead (wardens can see all)
+    """
+    WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden]
+    
+    if not complaint.is_anonymous:
+        return ComplaintRead.model_validate(complaint)
+    
+    # Anonymous complaint
+    if requesting_user.role in WARDEN_ROLES:
+        return ComplaintRead.model_validate(complaint)  # wardens see everything
+    
+    if str(requesting_user.id) == str(complaint.student_id):
+        return ComplaintRead.model_validate(complaint)  # student sees their own
+    
+    # Staff or other roles — hide student_id
+    return ComplaintReadAnonymous.model_validate(complaint)
 
 
 # Staff roles used in role checks
@@ -184,7 +182,7 @@ async def get_my_complaints_route(
     db: AsyncSession = Depends(get_db),
 ):
     complaints = await get_my_complaints(str(current_user.id), db)
-    return [_complaint_to_read(c) for c in complaints]
+    return [serialize_complaint(c, current_user) for c in complaints]
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +192,7 @@ async def get_my_complaints_route(
 
 @router.get(
     "/{complaint_id}",
-    response_model=ComplaintRead,
+    response_model=ComplaintRead | ComplaintReadAnonymous,
     summary="Get complaint details",
 )
 async def get_complaint_details(
@@ -208,7 +206,7 @@ async def get_complaint_details(
         requesting_user_role=current_user.role,
         db=db,
     )
-    return _complaint_to_read(complaint)
+    return serialize_complaint(complaint, current_user)
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +257,7 @@ async def get_complaint_timeline(
 
 @router.patch(
     "/{complaint_id}/status",
-    response_model=ComplaintRead,
+    response_model=ComplaintRead | ComplaintReadAnonymous,
     summary="Update complaint status (staff only)",
 )
 async def update_complaint_status(
@@ -278,7 +276,7 @@ async def update_complaint_status(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    return _complaint_to_read(updated)
+    return serialize_complaint(updated, current_user)
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +350,7 @@ async def reopen_complaint(
 
 @router.post(
     "/{complaint_id}/escalate",
-    response_model=ComplaintRead,
+    response_model=ComplaintRead | ComplaintReadAnonymous,
     summary="Escalate a complaint (warden only)",
 )
 async def escalate_complaint(
@@ -371,4 +369,4 @@ async def escalate_complaint(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    return _complaint_to_read(complaint)
+    return serialize_complaint(complaint, current_user)

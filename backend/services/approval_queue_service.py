@@ -27,6 +27,7 @@ from schemas.enums import (
 )
 from services.complaint_service import transition_complaint
 from services.notification_service import notify_all_by_role, notify_user
+from services.override_log_service import create_override_log
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,20 @@ async def override_ai_suggestion(
         f"original: category={item.ai_suggested_category}, severity={item.ai_suggested_severity}, "
         f"corrected: category={corrected_category}, severity={corrected_severity}, "
         f"assignee={corrected_assignee_id}"
+    )
+
+    # Log the override to the database
+    await create_override_log(
+        complaint_id=str(complaint.id),
+        warden_id=warden_id,
+        original_category=item.ai_suggested_category,
+        corrected_category=corrected_category,
+        original_severity=item.ai_suggested_severity,
+        corrected_severity=corrected_severity,
+        original_assignee=str(item.ai_suggested_assignee) if item.ai_suggested_assignee else None,
+        corrected_assignee=corrected_assignee_id,
+        reason=reason,
+        db=db
     )
 
     # Assign with corrected values
