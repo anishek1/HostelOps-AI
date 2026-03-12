@@ -16,7 +16,7 @@ celery_app = Celery(
     "hostelops",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["tasks.complaint_tasks", "tasks.notification_tasks"],
+    include=["tasks.complaint_tasks", "tasks.notification_tasks", "tasks.approval_tasks"],
 )
 
 import ssl as _ssl
@@ -35,5 +35,12 @@ celery_app.conf.update(
     },
     redis_backend_use_ssl={
         "ssl_cert_reqs": _ssl.CERT_NONE,
+    },
+    # Beat schedule for periodic tasks
+    beat_schedule={
+        "check-approval-timeouts": {
+            "task": "tasks.approval_tasks.check_approval_timeouts",
+            "schedule": 900.0,  # Every 15 minutes (900 seconds)
+        },
     },
 )

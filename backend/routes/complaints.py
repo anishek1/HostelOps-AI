@@ -5,11 +5,17 @@ Complaint endpoints — thin routes that call services only.
 All business logic lives in services/complaint_service.py.
 LLM classification runs asynchronously via Celery — routes return immediately.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
 from database import get_db
+from models.audit_log import AuditLog
+from models.user import User
 from schemas.complaint import ComplaintCreate, ComplaintRead
 from schemas.enums import ComplaintStatus, UserRole
 from services.auth_service import get_current_user, require_role
@@ -17,16 +23,24 @@ from services.complaint_service import (
     VALID_TRANSITIONS,
     create_complaint,
     get_complaint,
+    get_my_complaints,
+    staff_update_progress,
+    student_confirm_resolution,
+    student_reopen_complaint,
     transition_complaint,
 )
-from models.user import User
+from services import approval_queue_service as aqs
+from middleware.rate_limiter import RateLimiter, get_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Response schema for complaint creation
+# Response/Request schemas
 # ---------------------------------------------------------------------------
+
 
 class ComplaintCreatedResponse(BaseModel):
     complaint_id: str
@@ -38,9 +52,78 @@ class StatusUpdateRequest(BaseModel):
     status: ComplaintStatus
 
 
+class ReopenRequest(BaseModel):
+    reason: str
+
+
+class ReopenResponse(BaseModel):
+    complaint_id: str
+    status: str
+    message: str
+
+
+class EscalateRequest(BaseModel):
+    reason: str
+
+
+class ConfirmResponse(BaseModel):
+    complaint_id: str
+    status: str
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# Helper: Complaint ORM → ComplaintRead
+# ---------------------------------------------------------------------------
+
+
+def _complaint_to_read(c) -> ComplaintRead:
+    """Convert a Complaint ORM instance to ComplaintRead schema."""
+    return ComplaintRead(
+        id=str(c.id),
+        student_id=str(c.student_id),
+        text=c.text if not c.is_anonymous else "[Anonymous]",
+        is_anonymous=c.is_anonymous,
+        category=c.category,
+        severity=c.severity,
+        status=c.status,
+        assigned_to=str(c.assigned_to) if c.assigned_to else None,
+        confidence_score=c.confidence_score,
+        ai_suggested_category=c.ai_suggested_category,
+        ai_suggested_assignee=str(c.ai_suggested_assignee) if c.ai_suggested_assignee else None,
+        requires_approval=c.requires_approval,
+        classified_by=c.classified_by,
+        override_reason=c.override_reason,
+        flagged_input=c.flagged_input,
+        resolved_confirmed_at=c.resolved_confirmed_at,
+        reopen_reason=c.reopen_reason,
+        is_priority=c.is_priority,
+        created_at=c.created_at,
+        updated_at=c.updated_at,
+    )
+
+
+# Staff roles used in role checks
+STAFF_ROLES = (
+    UserRole.laundry_man,
+    UserRole.mess_secretary,
+    UserRole.mess_manager,
+    UserRole.assistant_warden,
+    UserRole.warden,
+    UserRole.chief_warden,
+)
+
+WARDEN_ROLES = (
+    UserRole.assistant_warden,
+    UserRole.warden,
+    UserRole.chief_warden,
+)
+
+
 # ---------------------------------------------------------------------------
 # POST /api/complaints/ — file a new complaint
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/",
@@ -56,7 +139,15 @@ async def file_complaint(
     data: ComplaintCreate,
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ):
+    # Rate limit: students can file max 5 complaints per day
+    # Wardens skip rate limiting (handled by role check above — only students file complaints)
+    await rate_limiter.check_rate_limit(
+        "complaint", str(current_user.id), 5, 86400,
+        "Rate limit exceeded. You can file up to 5 complaints per day.",
+    )
+
     complaint = await create_complaint(
         student_id=str(current_user.id),
         data=data,
@@ -79,8 +170,27 @@ async def file_complaint(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/complaints/my — student's own complaints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/my",
+    response_model=List[ComplaintRead],
+    summary="Get my complaints (student only)",
+)
+async def get_my_complaints_route(
+    current_user: User = Depends(require_role(UserRole.student)),
+    db: AsyncSession = Depends(get_db),
+):
+    complaints = await get_my_complaints(str(current_user.id), db)
+    return [_complaint_to_read(c) for c in complaints]
+
+
+# ---------------------------------------------------------------------------
 # GET /api/complaints/{complaint_id} — view a complaint
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{complaint_id}",
@@ -98,41 +208,53 @@ async def get_complaint_details(
         requesting_user_role=current_user.role,
         db=db,
     )
+    return _complaint_to_read(complaint)
 
-    # Build the ComplaintRead response manually (handles UUID → str conversion)
-    return ComplaintRead(
-        id=str(complaint.id),
-        student_id=str(complaint.student_id),
-        text=complaint.text if not complaint.is_anonymous else "[Anonymous]",
-        is_anonymous=complaint.is_anonymous,
-        category=complaint.category,
-        severity=complaint.severity,
-        status=complaint.status,
-        assigned_to=str(complaint.assigned_to) if complaint.assigned_to else None,
-        confidence_score=complaint.confidence_score,
-        ai_suggested_category=complaint.ai_suggested_category,
-        ai_suggested_assignee=str(complaint.ai_suggested_assignee) if complaint.ai_suggested_assignee else None,
-        requires_approval=complaint.requires_approval,
-        classified_by=complaint.classified_by,
-        override_reason=complaint.override_reason,
-        flagged_input=complaint.flagged_input,
-        created_at=complaint.created_at,
-        updated_at=complaint.updated_at,
+
+# ---------------------------------------------------------------------------
+# GET /api/complaints/{complaint_id}/timeline — audit log timeline
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{complaint_id}/timeline",
+    summary="Get complaint status timeline",
+)
+async def get_complaint_timeline(
+    complaint_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # First verify access
+    complaint = await get_complaint(
+        complaint_id=complaint_id,
+        requesting_user_id=str(current_user.id),
+        requesting_user_role=current_user.role,
+        db=db,
     )
+
+    # Fetch audit logs for this complaint
+    result = await db.execute(
+        select(AuditLog)
+        .where(AuditLog.entity_type == "complaint")
+        .where(AuditLog.entity_id == complaint_id)
+        .order_by(AuditLog.created_at.asc())
+    )
+    logs = result.scalars().all()
+    return [
+        {
+            "id": str(log.id),
+            "action": log.action,
+            "timestamp": log.created_at.isoformat(),
+            "user_id": str(log.user_id),
+        }
+        for log in logs
+    ]
 
 
 # ---------------------------------------------------------------------------
 # PATCH /api/complaints/{complaint_id}/status — update status (staff only)
 # ---------------------------------------------------------------------------
-
-STAFF_ROLES = (
-    UserRole.laundry_man,
-    UserRole.mess_secretary,
-    UserRole.mess_manager,
-    UserRole.assistant_warden,
-    UserRole.warden,
-    UserRole.chief_warden,
-)
 
 
 @router.patch(
@@ -146,54 +268,53 @@ async def update_complaint_status(
     current_user: User = Depends(require_role(*STAFF_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    complaint = await get_complaint(
-        complaint_id=complaint_id,
-        requesting_user_id=str(current_user.id),
-        requesting_user_role=current_user.role,
-        db=db,
-    )
-
     try:
-        updated = await transition_complaint(
+        updated = await staff_update_progress(
             complaint_id=complaint_id,
-            from_state=complaint.status,
-            to_state=body.status,
-            triggered_by=str(current_user.id),
+            new_status=body.status,
+            staff_id=str(current_user.id),
             db=db,
-            note=f"Manual update by {current_user.role.value}",
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    return ComplaintRead(
-        id=str(updated.id),
-        student_id=str(updated.student_id),
-        text=updated.text,
-        is_anonymous=updated.is_anonymous,
-        category=updated.category,
-        severity=updated.severity,
-        status=updated.status,
-        assigned_to=str(updated.assigned_to) if updated.assigned_to else None,
-        confidence_score=updated.confidence_score,
-        ai_suggested_category=updated.ai_suggested_category,
-        ai_suggested_assignee=str(updated.ai_suggested_assignee) if updated.ai_suggested_assignee else None,
-        requires_approval=updated.requires_approval,
-        classified_by=updated.classified_by,
-        override_reason=updated.override_reason,
-        flagged_input=updated.flagged_input,
-        created_at=updated.created_at,
-        updated_at=updated.updated_at,
+    return _complaint_to_read(updated)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/complaints/{complaint_id}/confirm — student confirms resolution
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{complaint_id}/confirm",
+    response_model=ConfirmResponse,
+    summary="Confirm complaint resolution (student only)",
+)
+async def confirm_resolution(
+    complaint_id: str,
+    current_user: User = Depends(require_role(UserRole.student)),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        complaint = await student_confirm_resolution(
+            complaint_id=complaint_id,
+            student_id=str(current_user.id),
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return ConfirmResponse(
+        complaint_id=str(complaint.id),
+        status=complaint.status.value,
+        message="Thank you for confirming. Your complaint has been closed.",
     )
 
 
 # ---------------------------------------------------------------------------
-# POST /api/complaints/{complaint_id}/reopen — student reopens resolved complaint
+# POST /api/complaints/{complaint_id}/reopen — student reopens a complaint
 # ---------------------------------------------------------------------------
-
-class ReopenResponse(BaseModel):
-    complaint_id: str
-    status: str
-    message: str
 
 
 @router.post(
@@ -203,58 +324,51 @@ class ReopenResponse(BaseModel):
 )
 async def reopen_complaint(
     complaint_id: str,
+    body: ReopenRequest,
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
 ):
-    complaint = await get_complaint(
-        complaint_id=complaint_id,
-        requesting_user_id=str(current_user.id),
-        requesting_user_role=current_user.role,
-        db=db,
-    )
-
-    # Students can only reopen their own complaints
-    if str(complaint.student_id) != str(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only reopen your own complaints.",
-        )
-
-    if complaint.status != ComplaintStatus.RESOLVED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot reopen complaint with status '{complaint.status.value}'. "
-                   "Complaint must be in RESOLVED state.",
-        )
-
     try:
-        updated = await transition_complaint(
+        updated = await student_reopen_complaint(
             complaint_id=complaint_id,
-            from_state=ComplaintStatus.RESOLVED,
-            to_state=ComplaintStatus.REOPENED,
-            triggered_by=str(current_user.id),
+            student_id=str(current_user.id),
+            reopen_reason=body.reason,
             db=db,
-            note="Reopened by student",
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-    # Notify wardens about the reopened complaint
-    try:
-        from services.notification_service import notify_all_by_role
-        from schemas.enums import NotificationType
-        await notify_all_by_role(
-            role=UserRole.assistant_warden,
-            title="Complaint Reopened",
-            body=f"A resolved complaint has been reopened by a student. ID: {complaint_id[:8].upper()}.",
-            notification_type=NotificationType.approval_needed,
-            db=db,
-        )
-    except Exception:
-        pass  # Notification failure is non-critical
 
     return ReopenResponse(
         complaint_id=str(updated.id),
         status=updated.status.value,
         message="Your complaint has been reopened. A warden will review it shortly.",
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/complaints/{complaint_id}/escalate — warden escalates
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{complaint_id}/escalate",
+    response_model=ComplaintRead,
+    summary="Escalate a complaint (warden only)",
+)
+async def escalate_complaint(
+    complaint_id: str,
+    body: EscalateRequest,
+    current_user: User = Depends(require_role(*WARDEN_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        complaint = await aqs.escalate_complaint(
+            complaint_id=complaint_id,
+            warden_id=str(current_user.id),
+            reason=body.reason,
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return _complaint_to_read(complaint)

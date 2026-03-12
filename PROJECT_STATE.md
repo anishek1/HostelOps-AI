@@ -300,6 +300,44 @@ Applied after ultimate verification audit. All blocking issues resolved.
 
 ---
 
+### SPRINT 3 — Agent 1 Complete (COMPLETE ✅)
+**Completed:** March 2026
+**Goal:** Finish Agent 1 workflows (approval queue, resolution, notifications) and add rate limiting
+
+#### What was built:
+- Rate limiting middleware using `redis.asyncio` with fail-open pattern.
+- Approval queue service and thin routes for warden overrides/approval.
+- Periodic Celery task (`check_approval_timeouts`) for auto-escalating stale queue items.
+- Complaint service enhancements for closing the loop (`staff_update_progress`, `student_confirm_resolution`, `student_reopen_complaint`).
+- Notification routes (`/api/notifications/`).
+- Alembic migration `2d36eb8e82cf_sprint3_complaint_resolution_fields` adding `resolved_confirmed_at`, `reopen_reason`, `is_priority`.
+
+#### ✅ Definition of Done — verified:
+- Backend starts with `uvicorn main:app --reload` without errors ✅
+- Alembic migration applied successfully ✅
+- `POST /api/auth/login` rate limited ✅
+- All core files (tasks, middleware, services, routes) correctly implemented ✅
+- `logger` defined in all new python files ✅
+
+#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
+
+**Deviation 1 — aioredis replaced with redis.asyncio**
+- **What happened:** `aioredis` is no longer maintained as a separate package, it was merged into `redis-py` in version 4.2.
+- **Fix applied:** Used `redis.asyncio.Redis` from the standard `redis` package for the rate limiter.
+- **Rule going forward:** Never use `aioredis` library. Use `redis.asyncio`.
+
+**Deviation 2 — Preserved transition_complaint() signature**
+- **What happened:** Algorithm suggested simplifying `transition_complaint` to just `(complaint_id, to_state, db)`.
+- **Fix applied:** Kept existing strict signature `(complaint_id, from_state, to_state, triggered_by, db, note)`.
+- **Rule going forward:** Always provide `from_state` and `triggered_by` when transitioning complaints.
+
+**Deviation 3 — Avoid JSON dicts in SQLAlchemy models if columns exist**
+- **What happened:** Algorithm suggested updating `ApprovalQueueItem` with a JSON `ai_suggestion` blob.
+- **Fix applied:** The model already correctly defined strictly typed columns `ai_suggested_category`, `ai_suggested_severity`, `ai_suggested_assignee`. Kept the columns.
+- **Rule going forward:** Prefer native PostgreSQL columns over unstructured JSON wherever possible for better schema safety.
+
+---
+
 ## SECTION 6 — ENVIRONMENT VARIABLES
 
 All variables live in `/backend/.env` (not committed). `/backend/.env.example` is committed with all names but no values.
@@ -460,10 +498,11 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 3 — Agent 1 Complete
+Current sprint: Sprint 4 — RAG Implementation & Tool Integration
 Sprint 1: ✅ Complete and verified
 Sprint 2: ✅ Complete, verified, and human-checked (9/9 human checks passed)
-Sprint 3: ⏳ Starting next
+Sprint 3: ✅ Complete and verified (Agent 1 workflows closed)
+Sprint 4: ⏳ Starting next
 Your task: [DESCRIBE TASK]
 ```
 

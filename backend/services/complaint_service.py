@@ -343,3 +343,203 @@ async def get_fallback_warden_id(db: AsyncSession) -> Optional[uuid.UUID]:
         if user:
             return user.id
     return None
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: staff_update_progress
+# ---------------------------------------------------------------------------
+
+
+async def staff_update_progress(
+    complaint_id: str,
+    new_status: ComplaintStatus,
+    staff_id: str,
+    db: AsyncSession,
+) -> Complaint:
+    """
+    Staff updates complaint progress:
+    ASSIGNED → IN_PROGRESS or IN_PROGRESS → RESOLVED.
+    Staff must be the assigned person.
+    """
+    from services.notification_service import notify_user
+
+    result = await db.execute(
+        select(Complaint).where(Complaint.id == uuid.UUID(complaint_id))
+    )
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found.")
+
+    # Verify staff is the assigned person
+    if str(complaint.assigned_to) != staff_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not assigned to this complaint.",
+        )
+
+    # Validate allowed transitions
+    valid_staff_transitions = {
+        ComplaintStatus.ASSIGNED: ComplaintStatus.IN_PROGRESS,
+        ComplaintStatus.IN_PROGRESS: ComplaintStatus.RESOLVED,
+    }
+    expected = valid_staff_transitions.get(complaint.status)
+    if expected is None or expected != new_status:
+        raise ValueError(
+            f"Invalid status update: {complaint.status.value} → {new_status.value}. "
+            f"Staff can only move ASSIGNED→IN_PROGRESS or IN_PROGRESS→RESOLVED."
+        )
+
+    # Transition
+    updated = await transition_complaint(
+        complaint_id=complaint_id,
+        from_state=complaint.status,
+        to_state=new_status,
+        triggered_by=staff_id,
+        db=db,
+        note=f"Progress update by staff {staff_id}",
+    )
+
+    # If resolved, notify student
+    if new_status == ComplaintStatus.RESOLVED and not complaint.is_anonymous:
+        try:
+            await notify_user(
+                recipient_id=complaint.student_id,
+                title="Complaint Resolved",
+                body=(
+                    f"Your complaint {str(complaint.id)[:8].upper()} has been marked as resolved. "
+                    f"Please confirm or reopen if needed."
+                ),
+                notification_type=NotificationType.complaint_resolved,
+                db=db,
+            )
+        except Exception:
+            pass  # Notification failure is non-critical
+
+    logger.info(f"[staff_update_progress] {complaint_id}: → {new_status.value} by {staff_id}")
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: student_confirm_resolution
+# ---------------------------------------------------------------------------
+
+
+async def student_confirm_resolution(
+    complaint_id: str,
+    student_id: str,
+    db: AsyncSession,
+) -> Complaint:
+    """
+    Student confirms that a resolved complaint is satisfactorily resolved.
+    Sets resolved_confirmed_at timestamp.
+    """
+    from datetime import datetime, timezone
+
+    result = await db.execute(
+        select(Complaint).where(Complaint.id == uuid.UUID(complaint_id))
+    )
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found.")
+
+    if str(complaint.student_id) != student_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this complaint.",
+        )
+
+    if complaint.status != ComplaintStatus.RESOLVED:
+        raise ValueError("Complaint is not in RESOLVED state.")
+
+    complaint.resolved_confirmed_at = datetime.now(timezone.utc)
+    db.add(complaint)
+    await db.flush()
+
+    logger.info(f"[student_confirm_resolution] {complaint_id}: confirmed by {student_id}")
+    return complaint
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: student_reopen_complaint
+# ---------------------------------------------------------------------------
+
+
+async def student_reopen_complaint(
+    complaint_id: str,
+    student_id: str,
+    reopen_reason: str,
+    db: AsyncSession,
+) -> Complaint:
+    """
+    Student reopens a resolved complaint with a reason.
+    Sets is_priority=True and transitions to REOPENED.
+    Notifies assistant wardens.
+    """
+    from services.notification_service import notify_all_by_role
+
+    result = await db.execute(
+        select(Complaint).where(Complaint.id == uuid.UUID(complaint_id))
+    )
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found.")
+
+    if str(complaint.student_id) != student_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only reopen your own complaints.",
+        )
+
+    if complaint.status != ComplaintStatus.RESOLVED:
+        raise ValueError("Only resolved complaints can be reopened.")
+
+    # Transition to REOPENED
+    await transition_complaint(
+        complaint_id=complaint_id,
+        from_state=ComplaintStatus.RESOLVED,
+        to_state=ComplaintStatus.REOPENED,
+        triggered_by=student_id,
+        db=db,
+        note=f"Reopened by student — reason: {reopen_reason}",
+    )
+
+    complaint.reopen_reason = reopen_reason
+    complaint.is_priority = True
+    db.add(complaint)
+    await db.flush()
+
+    # Notify assistant wardens
+    try:
+        await notify_all_by_role(
+            role=UserRole.assistant_warden,
+            title="Complaint Reopened",
+            body=(
+                f"Complaint {str(complaint.id)[:8].upper()} has been reopened. "
+                f"Reason: {reopen_reason}"
+            ),
+            notification_type=NotificationType.complaint_reopened,
+            db=db,
+        )
+    except Exception:
+        pass  # Notification failure is non-critical
+
+    logger.info(f"[student_reopen_complaint] {complaint_id}: reopened by {student_id}")
+    return complaint
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: get_my_complaints
+# ---------------------------------------------------------------------------
+
+
+async def get_my_complaints(
+    student_id: str,
+    db: AsyncSession,
+) -> list[Complaint]:
+    """Returns all complaints filed by a student, newest first."""
+    result = await db.execute(
+        select(Complaint)
+        .where(Complaint.student_id == uuid.UUID(student_id))
+        .order_by(Complaint.created_at.desc())
+    )
+    return result.scalars().all()

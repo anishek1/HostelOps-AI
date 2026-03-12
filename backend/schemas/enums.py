@@ -66,6 +66,7 @@ class ApprovalStatus(str, Enum):
     pending = "pending"
     approved = "approved"
     corrected = "corrected"
+    timed_out = "timed_out"
 
 
 class AlertType(str, Enum):
@@ -96,9 +97,12 @@ class NotificationType(str, Enum):
     machine_down = "machine_down"
     complaint_resolved = "complaint_resolved"
     registration_pending = "registration_pending"
+    complaint_escalated = "complaint_escalated"
+    complaint_reopened = "complaint_reopened"
 
 
 class ClassifiedBy(str, Enum):
     llm = "llm"
     fallback = "fallback"
     manual = "manual"
+    warden_override = "warden_override"

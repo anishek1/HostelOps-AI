@@ -38,6 +38,30 @@ class ComplaintRead(BaseModel):
     classified_by: ClassifiedBy
     override_reason: OverrideReason | None
     flagged_input: str | None
+    resolved_confirmed_at: datetime | None = None
+    reopen_reason: str | None = None
+    is_priority: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ComplaintReadAnonymous(BaseModel):
+    """Safe schema for anonymous complaints — omits student_id."""
+    id: str
+    text: str
+    is_anonymous: bool
+    category: ComplaintCategory | None
+    severity: ComplaintSeverity | None
+    status: ComplaintStatus
+    assigned_to: str | None
+    confidence_score: float | None
+    requires_approval: bool
+    classified_by: ClassifiedBy
+    resolved_confirmed_at: datetime | None = None
+    reopen_reason: str | None = None
+    is_priority: bool = False
     created_at: datetime
     updated_at: datetime
 

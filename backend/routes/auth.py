@@ -23,6 +23,7 @@ from services.auth_service import (
 from services.notification_service import notify_all_by_role
 
 from services.auth_service import register_user, login_user
+from middleware.rate_limiter import RateLimiter, get_rate_limiter
 
 router = APIRouter()
 
@@ -40,10 +41,19 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+):
     """
     Authenticate and return a JWT token pair.
     - Returns 401 if user not found, password wrong, not verified, or deactivated.
     - Access token and refresh token both embed the 'role' claim.
+    - Rate limited: 10 attempts per 15 minutes per room_number.
     """
+    await rate_limiter.check_rate_limit(
+        "login", payload.room_number, 10, 900,
+        "Too many login attempts. Please try again later.",
+    )
     return await login_user(payload, db)

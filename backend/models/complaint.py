@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, String, Text
+from sqlalchemy.types import VARCHAR
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -67,6 +68,11 @@ class Complaint(Base):
     override_reason: Mapped[Optional[OverrideReason]] = mapped_column(
         Enum(OverrideReason, name="overridereason"), nullable=True
     )
+    resolved_confirmed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reopen_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
