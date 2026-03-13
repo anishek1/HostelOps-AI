@@ -85,7 +85,7 @@ def serialize_complaint(complaint, requesting_user) -> ComplaintRead | Complaint
     - If anonymous AND requesting user is staff (not warden/chief_warden): return ComplaintReadAnonymous (hide student_id)
     - If anonymous AND requesting user is warden or chief_warden: return ComplaintRead (wardens can see all)
     """
-    WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden]
+    WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden, UserRole.assistant_warden]
     
     if not complaint.is_anonymous:
         return ComplaintRead.model_validate(complaint)
