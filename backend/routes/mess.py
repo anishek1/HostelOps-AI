@@ -52,6 +52,8 @@ async def submit_feedback(
         )
         return {"message": "Feedback submitted", "id": str(fb.id)}
     except ValueError as e:
+        if "already submitted" in str(e):
+            raise HTTPException(status_code=409, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
 
 

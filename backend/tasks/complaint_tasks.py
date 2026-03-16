@@ -379,7 +379,19 @@ def classify_and_route_complaint(self, complaint_id: str):
             if complaint.flagged_input:
                 _notify_wardens_flagged_input_sync(complaint_id, session)
 
+            # Step 8 — Route to Agent 2 (Laundry) or Agent 3 (Mess) if applicable
+            # We delay these tasks *before* commit but Celery's task_acks_late/track_started 
+            # and default transaction isolation mean it's safest if the complaint is committed first.
+            # However, since they run asynchronously, by the time they start, the commit usually finishes.
+            # Actually, doing it after commit is safer for DB visibility. Let's place it right after commit.
             session.commit()
+
+            # Trigger Sprint 4 Agents asynchronously
+            if category == ComplaintCategory.laundry:
+                route_to_laundry_agent.delay(complaint_id)
+            elif category == ComplaintCategory.mess:
+                route_to_mess_agent.delay(complaint_id)
+
             return {
                 "status": "success",
                 "complaint_id": complaint_id,
