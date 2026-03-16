@@ -59,12 +59,16 @@ from routes.users import router as users_router      # noqa: E402
 from routes.complaints import router as complaints_router  # noqa: E402
 from routes.approval_queue import router as approval_queue_router  # noqa: E402
 from routes.notifications import router as notifications_router  # noqa: E402
+from routes.laundry import router as laundry_router  # noqa: E402
+from routes.mess import router as mess_router        # noqa: E402
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
 app.include_router(complaints_router, prefix="/api/complaints", tags=["Complaints"])
 app.include_router(approval_queue_router, prefix="/api/approval-queue", tags=["Approval Queue"])
 app.include_router(notifications_router, prefix="/api/notifications", tags=["Notifications"])
+app.include_router(laundry_router, prefix="/api/laundry", tags=["Laundry"])
+app.include_router(mess_router, prefix="/api/mess", tags=["Mess"])
 
 
 # ---------------------------------------------------------------------------

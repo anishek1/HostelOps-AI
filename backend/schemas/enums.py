@@ -106,3 +106,24 @@ class ClassifiedBy(str, Enum):
     fallback = "fallback"
     manual = "manual"
     warden_override = "warden_override"
+
+
+class LaundrySlotStatus(str, Enum):
+    available = "available"
+    booked = "booked"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class MachineStatus(str, Enum):
+    operational = "operational"
+    under_repair = "under_repair"
+    out_of_service = "out_of_service"
+
+
+class MealType(str, Enum):
+    breakfast = "breakfast"
+    lunch = "lunch"
+    dinner = "dinner"
+    snacks = "snacks"
+

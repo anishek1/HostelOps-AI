@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     LAUNDRY_UNAVAILABILITY_DAYS: int = 4
     APPROVAL_QUEUE_TIMEOUT_MINUTES: int = 30
 
+    # --- Sprint 4: Mess Alert Thresholds ---
+    MESS_ALERT_THRESHOLD: float = 2.5
+    MESS_CRITICAL_THRESHOLD: float = 2.0
+    MESS_MIN_PARTICIPATION: float = 0.15
+    MESS_MIN_RESPONSES: int = 5
+
+    # --- Sprint 4: Laundry Slot Generation ---
+    LAUNDRY_SLOTS_START_HOUR: int = 8
+    LAUNDRY_SLOTS_END_HOUR: int = 22
+    LAUNDRY_SLOT_DURATION_HOURS: int = 1
+
     # --- CORS ---
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 

@@ -392,3 +392,85 @@ def classify_and_route_complaint(self, complaint_id: str):
             session.rollback()
             logger.error(f"[classify_task] Unhandled error for {complaint_id}: {exc}", exc_info=True)
             raise
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Laundry & Mess Agent Routing Tasks
+# Called by classify_and_route_complaint when category = laundry/mess
+# ---------------------------------------------------------------------------
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=2,
+    retry_backoff=True,
+    name="tasks.complaint_tasks.route_to_laundry_agent",
+)
+def route_to_laundry_agent(self, complaint_id: str):
+    """
+    Called when Agent 1 classifies a complaint as 'laundry'.
+    Runs LaundryAgent to determine routing action.
+    Logs the routing result — does NOT re-transition complaint status
+    (Agent 1 already moved it to ASSIGNED in classify_and_route_complaint).
+    """
+    async def _run():
+        from database import AsyncSessionLocal
+        from agents.agent_laundry import LaundryAgent
+        from models.complaint import Complaint
+        async with AsyncSessionLocal() as db:
+            complaint = await db.get(Complaint, uuid.UUID(complaint_id))
+            if not complaint:
+                logger.error(f"[laundry_route] Complaint {complaint_id} not found")
+                return
+            agent = LaundryAgent()
+            text = complaint.sanitized_text or complaint.text
+            result = await agent.route_complaint(text, str(complaint.student_id))
+            if result:
+                logger.info(
+                    f"[laundry_route] Complaint {complaint_id} → action={result.action_taken}, "
+                    f"notes={result.notes}"
+                )
+            else:
+                logger.warning(f"[laundry_route] LaundryAgent returned None for {complaint_id}")
+
+    try:
+        import asyncio
+        asyncio.run(_run())
+    except Exception as exc:
+        logger.error(f"[laundry_route] Task failed for {complaint_id}: {exc}", exc_info=True)
+        raise self.retry(exc=exc)
+
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=2,
+    retry_backoff=True,
+    name="tasks.complaint_tasks.route_to_mess_agent",
+)
+def route_to_mess_agent(self, complaint_id: str):
+    """
+    Called when Agent 1 classifies a complaint as 'mess'.
+    Logs the routing. Complaint is already ASSIGNED to mess_secretary/mess_manager
+    by classify_and_route_complaint — this task provides additional context logging.
+    """
+    async def _run():
+        from database import AsyncSessionLocal
+        from models.complaint import Complaint
+        async with AsyncSessionLocal() as db:
+            complaint = await db.get(Complaint, uuid.UUID(complaint_id))
+            if not complaint:
+                logger.error(f"[mess_route] Complaint {complaint_id} not found")
+                return
+            logger.info(
+                f"[mess_route] Mess complaint {complaint_id} routed to "
+                f"assignee={complaint.assigned_to}"
+            )
+
+    try:
+        import asyncio
+        asyncio.run(_run())
+    except Exception as exc:
+        logger.error(f"[mess_route] Task failed for {complaint_id}: {exc}", exc_info=True)
+        raise self.retry(exc=exc)
+
