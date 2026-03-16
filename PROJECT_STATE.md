@@ -300,17 +300,22 @@ Applied after ultimate verification audit. All blocking issues resolved.
 
 ---
 
-### SPRINT 3 — Agent 1 Complete (COMPLETE ✅)
-**Completed:** March 2026
-**Goal:** Finish Agent 1 workflows (approval queue, resolution, notifications) and add rate limiting
+### Sprint 3 — Agent 1 Complete ✅
 
-#### What was built:
-- Rate limiting middleware using `redis.asyncio` with fail-open pattern.
-- Approval queue service and thin routes for warden overrides/approval.
-- Periodic Celery task (`check_approval_timeouts`) for auto-escalating stale queue items.
-- Complaint service enhancements for closing the loop (`staff_update_progress`, `student_confirm_resolution`, `student_reopen_complaint`).
-- Notification routes (`/api/notifications/`).
-- Alembic migration `2d36eb8e82cf_sprint3_complaint_resolution_fields` adding `resolved_confirmed_at`, `reopen_reason`, `is_priority`.
+**What was built:**
+- `backend/middleware/rate_limiter.py` — per-user rate limiting (5 complaints/day per student), Redis-backed, fail-open, warden roles bypass
+- `backend/services/approval_queue_service.py` — approve, override, escalate functions. All transitions go through `transition_complaint()`
+- `backend/routes/approval_queue.py` — GET /api/approval-queue/, POST approve, POST override
+- `backend/routes/complaints.py` — updated with /my, /timeline, /reopen, /escalate routes
+- `backend/routes/notifications.py` — GET /api/notifications/, PATCH /{id}/read, PATCH /read-all
+- `backend/tasks/approval_tasks.py` — `check_approval_timeouts` Celery task, auto-escalates after APPROVAL_QUEUE_TIMEOUT_MINUTES
+- `backend/celery_app.py` — updated with beat schedule (every 15 mins) and approval_tasks include
+- `backend/services/complaint_service.py` — updated with `staff_update_progress()`, `student_confirm_resolution()`, `student_reopen_complaint()`
+- `backend/schemas/complaint.py` — `ComplaintReadAnonymous` schema, UUID → str field_validator, `serialize_complaint()` helper
+- Alembic migrations: `resolved_confirmed_at`, `reopen_reason`, `is_priority` fields; `warden_override` classifiedby enum value; `complaint_escalated`, `complaint_reopened` notificationtype enum values
+
+**Full complaint lifecycle now complete:**
+INTAKE → CLASSIFIED → AWAITING_APPROVAL → ASSIGNED → IN_PROGRESS → RESOLVED → (REOPENED → ASSIGNED)
 
 #### ✅ Definition of Done — verified:
 - Backend starts with `uvicorn main:app --reload` without errors ✅
@@ -335,6 +340,47 @@ Applied after ultimate verification audit. All blocking issues resolved.
 - **What happened:** Algorithm suggested updating `ApprovalQueueItem` with a JSON `ai_suggestion` blob.
 - **Fix applied:** The model already correctly defined strictly typed columns `ai_suggested_category`, `ai_suggested_severity`, `ai_suggested_assignee`. Kept the columns.
 - **Rule going forward:** Prefer native PostgreSQL columns over unstructured JSON wherever possible for better schema safety.
+
+**Deviation 4 — escalate route registered in complaints.py not approval_queue.py**
+- **What happened:** The spec placed `POST /api/complaints/{id}/escalate` inside `routes/approval_queue.py`. Since the URL prefix falls under `/api/complaints/`, it was instead registered inside `routes/complaints.py` while still calling `approval_queue_service.escalate_complaint()`.
+- **Rule going forward:** The escalate route lives in `routes/complaints.py`. Do not move it.
+
+**Deviation 5 — MissingGreenlet on complaint return after commit**
+- **What happened:** After `db.commit()`, SQLAlchemy expires all ORM attributes. Any route that accessed complaint fields after a service commit triggered `MissingGreenlet: greenlet_spawn has not been called`.
+- **Fix applied:** Added `await db.refresh(complaint)` immediately after every `db.commit()` in `approval_queue_service.py`, `complaint_service.py` (resolution functions). This must be done in every service function that commits and then returns the ORM object.
+- **Rule going forward:** Every service function that calls `await db.commit()` and then returns an ORM object MUST call `await db.refresh(object)` before returning. Never return an expired ORM object.
+
+**Deviation 6 — UUID fields not coercing to str in ComplaintRead schema**
+- **What happened:** `ComplaintRead.model_validate(complaint)` failed with `Input should be a valid string` because SQLAlchemy returns UUID objects but the schema declared fields as `str`.
+- **Fix applied:** Added `@field_validator` with `mode='before'` to `ComplaintRead` and `ComplaintReadAnonymous` to convert UUID → str:
+  ```python
+  @field_validator('id', 'student_id', 'assigned_to', 'ai_suggested_assignee', mode='before')
+  @classmethod
+  def uuid_to_str(cls, v):
+      return str(v) if v is not None else None
+  ```
+- **Rule going forward:** Any Pydantic schema that validates SQLAlchemy ORM objects with UUID fields must include this validator. Never declare UUID fields as bare `str` without the validator.
+
+**Deviation 7 — warden_override missing from classifiedby enum in PostgreSQL**
+- **What happened:** The code used `classified_by = "warden_override"` but this value was never added to the `classifiedby` PostgreSQL enum during migrations.
+- **Fix applied:** 
+  1. Ran `ALTER TYPE classifiedby ADD VALUE IF NOT EXISTS 'warden_override'` in Supabase SQL Editor
+  2. Created Alembic migration `add_warden_override_to_classifiedby_enum` with `op.execute("ALTER TYPE classifiedby ADD VALUE IF NOT EXISTS 'warden_override'")`
+- **Rule going forward:** Any new enum value used in code MUST have a corresponding Alembic migration that adds it to the PostgreSQL enum. Never use an enum value in code without first verifying it exists in the DB enum.
+
+**Deviation 8 — complaint_escalated and complaint_reopened missing from notificationtype enum**
+- **What happened:** Sprint 3 added new notification types (`complaint_escalated`, `complaint_reopened`) in Python code but did not add them to the PostgreSQL `notificationtype` enum.
+- **Fix applied:** Ran `ALTER TYPE notificationtype ADD VALUE IF NOT EXISTS 'complaint_escalated'` and `ALTER TYPE notificationtype ADD VALUE IF NOT EXISTS 'complaint_reopened'` in Supabase SQL Editor. Created corresponding Alembic migrations.
+- **Rule going forward:** Same as Deviation 4 — every new NotificationType value needs an Alembic migration. Before using any enum value in code, check the DB enum first.
+
+**Deviation 9 — assistant_warden missing from WARDEN_ROLES in serialize_complaint()**
+- **What happened:** `serialize_complaint()` in `routes/complaints.py` defined `WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden]` — missing `assistant_warden`. This caused anonymous complaints to hide `student_id` even from assistant wardens.
+- **Fix applied:** Updated to `WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden, UserRole.assistant_warden]`
+- **Rule going forward:** Any role-based check that intends to cover all warden-level users must include `assistant_warden`, `warden`, AND `chief_warden`. Never assume wardens = just `warden` role.
+
+**Deviation 10 — reopen request body field named 'reason' not 'reopen_reason'**
+- **What happened:** The `POST /api/complaints/{id}/reopen` endpoint schema uses field name `reason` in the request body, not `reopen_reason` as the spec described. The DB column is `reopen_reason` but the API input field is `reason`.
+- **Rule going forward:** The reopen endpoint expects `{"reason": "..."}` in the request body.
 
 ---
 
@@ -487,6 +533,34 @@ Issues found and fixed during human checks:
 2. Celery sys.path not including backend → fixed with sys.path.insert in `celery_app.py`
 3. Groq model `llama3-8b-8192` decommissioned → updated to `llama-3.3-70b-versatile`
 
+### Sprint 3 Verification (COMPLETE ✅)
+
+**Code Audit — Gemini 3.1 Pro**
+- First audit: PARTIAL — 3 failures
+- Fixes applied: rate limit message, override logging, ComplaintReadAnonymous wiring
+- Re-verification: PASS — 0 failures, 1 deviation confirmed acceptable
+
+**Manual Checks — 9/9 PASS (March 13, 2026)**
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Approval flow | ✅ PASS | AWAITING_APPROVAL → ASSIGNED via warden approve |
+| Override flow | ✅ PASS | AI overridden, override_logs row created |
+| Rate limiting | ✅ PASS | HTTP 429 on 6th complaint, correct message |
+| Resolution flow | ✅ PASS | ASSIGNED → IN_PROGRESS → RESOLVED → REOPENED |
+| Anonymous complaints | ✅ PASS | After WARDEN_ROLES fix applied |
+| Timeline | ✅ PASS | Full audit trail from INTAKE to REOPENED |
+| My complaints | ✅ PASS | 14 complaints, all Student 1's, newest first |
+| Notifications | ✅ PASS | 15 notifications, mark-as-read working |
+| Celery beat | ✅ PASS | Beat scheduler started, tasks scheduled |
+
+Issues found and fixed during manual checks:
+1. MissingGreenlet after db.commit() → fixed with db.refresh(complaint)
+2. UUID → str coercion in ComplaintRead → fixed with field_validator
+3. warden_override missing from classifiedby enum → added via SQL + migration
+4. complaint_escalated, complaint_reopened missing from notificationtype enum → added via SQL + migration
+5. assistant_warden missing from WARDEN_ROLES → fixed in serialize_complaint()
+
 ---
 
 ## SECTION 9 — HOW TO USE THIS DOCUMENT
@@ -498,10 +572,10 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 4 — RAG Implementation & Tool Integration
+Current sprint: Sprint 4 (starting next)
 Sprint 1: ✅ Complete and verified
-Sprint 2: ✅ Complete, verified, and human-checked (9/9 human checks passed)
-Sprint 3: ✅ Complete and verified (Agent 1 workflows closed)
+Sprint 2: ✅ Complete, verified, and human-checked (9/9 checks passed)
+Sprint 3: ✅ Complete, verified, and human-checked (9/9 checks passed)
 Sprint 4: ⏳ Starting next
 Your task: [DESCRIBE TASK]
 ```
@@ -541,3 +615,19 @@ Paste this entire document into the new AI and say:
 13. **Never remove the sys.path fix from `celery_app.py`**. It is required for Celery to find backend modules.
 14. **Never hardcode the Groq model name**. Always use `settings.GROQ_MODEL_NAME`. If a model is decommissioned, update `.env` only.
 15. **Always restore GROQ_API_KEY after fallback testing**. Testing with an invalid key is done in `.env` only — restart both servers after restoring.
+16. **Always call `await db.refresh(obj)` after `await db.commit()`** when the ORM object will be returned or accessed afterward. Never return an expired SQLAlchemy object.
+17. **Always add UUID → str field_validator to Pydantic schemas** that validate SQLAlchemy ORM objects with UUID primary keys or foreign keys.
+18. **Any new enum value used in Python code MUST have an Alembic migration** that adds it to the PostgreSQL enum. Check the DB enum before using any new value.
+19. **WARDEN_ROLES must always include assistant_warden, warden, AND chief_warden** — never assume warden-level access means just `warden` role.
+
+---
+
+## SECTION 11 — OUTPUT FILES
+
+**Sprint 3:**
+- /mnt/user-data/outputs/SPRINT_3_PROMPT.md
+- /mnt/user-data/outputs/SPRINT_3_VERIFICATION.md
+- /mnt/user-data/outputs/SPRINT_3_REVERIFICATION.md
+- /mnt/user-data/outputs/SPRINT_3_FIXES.md
+- /mnt/user-data/outputs/SPRINT_3_MANUAL_CHECKS.md
+- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_COMPLETE.md
