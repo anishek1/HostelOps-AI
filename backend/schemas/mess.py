@@ -43,7 +43,7 @@ class MessFeedbackRead(BaseModel):
     id: str
     student_id: str
     meal: MealPeriod
-    feedback_date: date
+    feedback_date: date = Field(alias="date")
     food_quality: int
     food_quantity: int
     hygiene: int
