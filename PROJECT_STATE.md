@@ -382,6 +382,15 @@ INTAKE → CLASSIFIED → AWAITING_APPROVAL → ASSIGNED → IN_PROGRESS → RES
 - **What happened:** The `POST /api/complaints/{id}/reopen` endpoint schema uses field name `reason` in the request body, not `reopen_reason` as the spec described. The DB column is `reopen_reason` but the API input field is `reason`.
 - **Rule going forward:** The reopen endpoint expects `{"reason": "..."}` in the request body.
 
+**Deviation 7 — MessFeedback date column named 'date' not 'feedback_date'**
+- DB column is `date`. `MessFeedbackRead` uses `Field(alias="date")` to map it to `feedback_date` in API responses.
+- Rule: Use `Field(alias="date")` in MessFeedbackRead. Never rename the DB column.
+
+**Deviation 8 — MessFeedback meal field named 'meal' not 'meal_type'**
+- `MessFeedbackCreate` and `MessFeedbackRead` use `meal` as the field name, not `meal_type`.
+- Rule: All mess feedback API requests and responses use `meal` not `meal_type`.
+
+
 ---
 
 ## SECTION 6 — ENVIRONMENT VARIABLES
@@ -454,11 +463,55 @@ Every significant architectural or technical decision made during this project i
 | logging pattern | Every file using `logger` must define `logger = logging.getLogger(__name__)` at module level | Prevents NameError at runtime — learned from complaint_tasks.py failure | Human checks phase |
 | Groq model versioning | `GROQ_MODEL_NAME` in `.env` controls the model — never hardcoded | Groq decommissions models without much notice — must be configurable | Human checks phase |
 
+### Hostel Onboarding & Configuration (Planned for Sprint 6 — Frontend)
+
+When a new hostel deploys HostelOps AI, wardens need a one-time setup wizard to configure:
+
+1. **Hostel profile** — name, address, number of floors, hostel mode (college/autonomous)
+2. **Infrastructure setup** — auto-generate laundry machines based on floors (e.g. 1 machine per floor), with ability to add/remove/rename from settings panel
+3. **Operational thresholds** — mess alert threshold, approval queue timeout, complaint rate limit, laundry slot hours — currently in .env, should be configurable from warden dashboard UI
+4. **Student capacity** — total active students (used for participation rate calculation)
+
+**Backend support:** All of this is already possible via existing API endpoints and settings. What is missing:
+- A `hostel_config` table for per-hostel settings (replaces hardcoded .env values)
+- Config CRUD endpoints for wardens
+- Setup wizard in React PWA (Sprint 6)
+- `POST /api/laundry/setup` bulk machine creation endpoint
+
+**Design decision pending:** Single-tenant (one hostel per deployment) vs multi-tenant (multiple hostels on one instance). V1 is single-tenant.
+
 ---
 
 ## SECTION 8 — VERIFICATION CHECKLIST (FOR OPUS OR ANY REVIEWER AI)
 
 If you are reading this to verify the current state of the project, check every item below against the actual codebase. Report exactly: ✅ PASS, ❌ FAIL, or ⚠️ DEVIATION (with explanation).
+
+### Sprint 4 Verification (COMPLETE ✅)
+
+**Code Audit — Gemini 3.1 Pro**
+- Result: PASS — 38 items passed, 0 failures, 6 acceptable deviations
+- All golden rules confirmed: logger, db.refresh, UUID validators, WARDEN_ROLES, enum migrations
+
+**Manual Checks — 11/11 PASS (March 16, 2026)**
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Machines seeded | ✅ PASS | 3 machines created (A/B/C, floors 1-3) |
+| Available slots | ✅ PASS | 42 slots generated (14 per machine × 3), 08:00-22:00 |
+| Book a slot | ✅ PASS | HTTP 200, booking confirmation returned |
+| One slot per day | ✅ PASS | HTTP 400 on second booking same date |
+| My bookings | ✅ PASS | Booked slot visible, priority_score=1.0 |
+| Machine status update | ✅ PASS | under_repair blocks new bookings (HTTP 400) |
+| Submit mess feedback | ✅ PASS | 5-dimension feedback accepted |
+| Duplicate feedback blocked | ✅ PASS | HTTP 409 on duplicate meal/date |
+| Mess summary | ✅ PASS | avg per dimension + overall_avg + trend returned |
+| Laundry complaint routing | ✅ PASS | category=laundry → route_to_laundry_agent fired |
+| Mess complaint routing | ✅ PASS | category=mess → route_to_mess_agent fired (retried once on Windows, succeeded) |
+
+Issues found and fixed during manual checks:
+1. MessFeedback `meal_type` field named `meal` in schema → documented as deviation
+2. MessFeedbackRead `feedback_date` field uses `Field(alias="date")` to map DB column → fixed
+3. `Event loop is closed` warning on route_to_mess_agent first attempt on Windows → non-fatal, retries and succeeds, will not occur on Linux/Railway
 
 ### Sprint 1 Verification
 
@@ -572,11 +625,12 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 4 (starting next)
+Current sprint: Sprint 5 (starting next)
 Sprint 1: ✅ Complete and verified
-Sprint 2: ✅ Complete, verified, and human-checked (9/9 checks passed)
-Sprint 3: ✅ Complete, verified, and human-checked (9/9 checks passed)
-Sprint 4: ⏳ Starting next
+Sprint 2: ✅ Complete, verified, human-checked (9/9)
+Sprint 3: ✅ Complete, verified, human-checked (9/9)
+Sprint 4: ✅ Complete, verified, human-checked (11/11)
+Sprint 5: ⏳ Starting next
 Your task: [DESCRIBE TASK]
 ```
 
@@ -619,15 +673,14 @@ Paste this entire document into the new AI and say:
 17. **Always add UUID → str field_validator to Pydantic schemas** that validate SQLAlchemy ORM objects with UUID primary keys or foreign keys.
 18. **Any new enum value used in Python code MUST have an Alembic migration** that adds it to the PostgreSQL enum. Check the DB enum before using any new value.
 19. **WARDEN_ROLES must always include assistant_warden, warden, AND chief_warden** — never assume warden-level access means just `warden` role.
+20. **Event loop is closed warning in Celery on Windows is non-fatal.** The `route_to_laundry_agent` and `route_to_mess_agent` tasks may show this warning on first attempt in `--pool=solo` dev mode on Windows. They retry automatically and succeed. Do not add workarounds — this does not occur on Linux/Railway production.
 
 ---
 
 ## SECTION 11 — OUTPUT FILES
 
-**Sprint 3:**
-- /mnt/user-data/outputs/SPRINT_3_PROMPT.md
-- /mnt/user-data/outputs/SPRINT_3_VERIFICATION.md
-- /mnt/user-data/outputs/SPRINT_3_REVERIFICATION.md
-- /mnt/user-data/outputs/SPRINT_3_FIXES.md
-- /mnt/user-data/outputs/SPRINT_3_MANUAL_CHECKS.md
-- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_COMPLETE.md
+**Sprint 4:**
+- /mnt/user-data/outputs/SPRINT_4_PROMPT.md
+- /mnt/user-data/outputs/SPRINT_4_VERIFICATION.md
+- /mnt/user-data/outputs/SPRINT_4_MANUAL_CHECKS.md
+- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT4.md
