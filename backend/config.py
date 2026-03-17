@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     LAUNDRY_SLOTS_END_HOUR: int = 22
     LAUNDRY_SLOT_DURATION_HOURS: int = 1
 
+    # --- Sprint 5: Hostel Identity & Config Fallbacks ---
+    HOSTEL_NAME: str = "HostelOps AI"
+    HOSTEL_MODE: str = "college"
+    TOTAL_FLOORS: int = 3
+    TOTAL_STUDENTS_CAPACITY: int = 200
+    COMPLAINT_RATE_LIMIT_DAILY: int = 5
+    LAUNDRY_CANCELLATION_DEADLINE_MINUTES: int = 15
+
     # --- CORS ---
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 

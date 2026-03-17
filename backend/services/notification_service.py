@@ -2,16 +2,19 @@
 services/notification_service.py — HostelOps AI
 =================================================
 Handles writing notifications to the in-app inbox.
-Push delivery (pywebpush) is a future enhancement — in-app DB record is the reliable fallback.
-Service functions called from routes. Never call directly from agents or tasks yet.
+Sprint 5: After writing to DB, fires a best-effort push notification.
+Push failures are swallowed — they must never affect in-app notification delivery.
 """
 
+import logging
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.notification import Notification
 from schemas.enums import NotificationType
+
+logger = logging.getLogger(__name__)
 
 
 async def notify_user(
@@ -23,7 +26,8 @@ async def notify_user(
 ) -> Notification:
     """
     Write a notification record to the database.
-    Always succeeds — push delivery is separate and best-effort.
+    After commit, fires a best-effort push notification.
+    The caller is responsible for the outer commit — push fires AFTER.
     """
     notification = Notification(
         recipient_id=recipient_id,
@@ -33,6 +37,45 @@ async def notify_user(
     )
     db.add(notification)
     # Caller is responsible for committing the session
+    return notification
+
+
+async def notify_user_with_push(
+    recipient_id: uuid.UUID,
+    title: str,
+    body: str,
+    notification_type: NotificationType,
+    db: AsyncSession,
+) -> Notification:
+    """
+    Write a notification record AND send a best-effort push notification.
+    Use this variant when the caller wants auto-push delivery.
+    Commits the notification, then tries push (push failures are logged only).
+    """
+    from services.push_service import send_push_notification
+
+    notification = Notification(
+        recipient_id=recipient_id,
+        title=title,
+        body=body,
+        type=notification_type,
+    )
+    db.add(notification)
+    # Commit the in-app notification first — push must never block this
+    await db.commit()
+    await db.refresh(notification)
+
+    # Best-effort push — swallow all errors
+    try:
+        await send_push_notification(
+            user_id=str(recipient_id),
+            title=title,
+            body=body,
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"Push notification failed for user {recipient_id}: {e}")
+
     return notification
 
 

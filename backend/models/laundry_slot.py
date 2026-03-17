@@ -51,6 +51,9 @@ class LaundrySlot(Base):
     priority_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     booked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Sprint 5: No-show and late cancellation tracking
+    no_show_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    late_cancellation_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

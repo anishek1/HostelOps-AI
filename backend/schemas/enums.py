@@ -113,6 +113,7 @@ class LaundrySlotStatus(str, Enum):
     booked = "booked"
     completed = "completed"
     cancelled = "cancelled"
+    no_show = "no_show"  # Sprint 5: added for no-show penalty system
 
 
 class MachineStatus(str, Enum):

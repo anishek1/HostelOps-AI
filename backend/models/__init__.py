@@ -16,3 +16,7 @@ from models.approval_queue import ApprovalQueueItem # noqa: F401
 from models.override_log import OverrideLog         # noqa: F401
 from models.audit_log import AuditLog               # noqa: F401
 from models.notification import Notification        # noqa: F401
+# Sprint 5: new models
+from models.hostel_config import HostelConfig       # noqa: F401
+from models.refresh_token import RefreshToken       # noqa: F401
+from models.push_subscription import PushSubscription  # noqa: F401

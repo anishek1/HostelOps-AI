@@ -30,7 +30,36 @@ async def calculate_priority_score(student_id: uuid.UUID, db: AsyncSession) -> f
     Returns a priority score 0.0 – 1.0. Higher = higher priority.
     Algorithm: days since last completed/booked slot, capped to 7-day window.
     New students get max priority (1.0).
+    Sprint 5: Applies no_show or late_cancellation penalty (returns 0.1 if recent).
     """
+    now = datetime.utcnow()
+    # Check for recent no-show or late cancellation within penalty window
+    noshow_cutoff = now - timedelta(hours=settings.LAUNDRY_NOSHOW_PENALTY_HOURS)
+    noshow_result = await db.execute(
+        select(LaundrySlot)
+        .where(LaundrySlot.student_id == student_id)
+        .where(LaundrySlot.booking_status == LaundrySlotStatus.no_show)
+        .where(LaundrySlot.no_show_at.isnot(None))
+        .where(LaundrySlot.no_show_at >= noshow_cutoff)
+        .limit(1)
+    )
+    if noshow_result.scalar_one_or_none():
+        logger.debug(f"Student {student_id} has recent no-show — priority penalty applied")
+        return 0.1
+
+    # Check for recent late cancellation within penalty window
+    late_cancel_result = await db.execute(
+        select(LaundrySlot)
+        .where(LaundrySlot.student_id == student_id)
+        .where(LaundrySlot.late_cancellation_at.isnot(None))
+        .where(LaundrySlot.late_cancellation_at >= noshow_cutoff)
+        .limit(1)
+    )
+    if late_cancel_result.scalar_one_or_none():
+        logger.debug(f"Student {student_id} has recent late cancellation — priority penalty applied")
+        return 0.1
+
+    # Normal priority: days since last completed/booked slot
     result = await db.execute(
         select(LaundrySlot)
         .where(LaundrySlot.student_id == student_id)
@@ -179,6 +208,7 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
     """
     Cancels a booked slot. Students can only cancel their own.
     Staff (laundry_man, warden) can cancel any.
+    Sprint 5: Applies late-cancellation penalty if within deadline window.
     """
     slot = await db.get(LaundrySlot, slot_id)
     if not slot:
@@ -188,6 +218,25 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
     if not is_staff and slot.student_id != cancelled_by:
         raise PermissionError("You can only cancel your own bookings")
 
+    # Sprint 5: Late cancellation check — apply penalty if within deadline
+    penalty_applied = False
+    student_id_before_cancel = slot.student_id
+    if slot.slot_date and slot.slot_time and not is_staff:
+        try:
+            slot_start_str = slot.slot_time.split("-")[0]  # "HH:MM-HH:MM" → "HH:MM"
+            slot_start_hour, slot_start_min = map(int, slot_start_str.split(":"))
+            slot_datetime = datetime(
+                slot.slot_date.year, slot.slot_date.month, slot.slot_date.day,
+                slot_start_hour, slot_start_min
+            )
+            minutes_until = (slot_datetime - datetime.utcnow()).total_seconds() / 60
+            if minutes_until < settings.LAUNDRY_CANCELLATION_DEADLINE_MINUTES:
+                slot.late_cancellation_at = datetime.utcnow()
+                penalty_applied = True
+                logger.info(f"Late cancellation penalty applied for student {cancelled_by}: {minutes_until:.0f} min until slot")
+        except Exception as e:
+            logger.warning(f"Could not parse slot_time '{slot.slot_time}' for deadline check: {e}")
+
     slot.booking_status = LaundrySlotStatus.available
     slot.student_id = None
     slot.priority_score = None
@@ -195,7 +244,23 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
     db.add(slot)
     await db.commit()
     await db.refresh(slot)
-    logger.info(f"Slot {slot_id} cancelled by user {cancelled_by}")
+    logger.info(f"Slot {slot_id} cancelled by user {cancelled_by} (penalty={penalty_applied})")
+
+    # Notify student of late cancellation penalty (after commit — best effort)
+    if penalty_applied and student_id_before_cancel:
+        try:
+            from services.notification_service import notify_user_with_push
+            from schemas.enums import NotificationType
+            await notify_user_with_push(
+                recipient_id=student_id_before_cancel,
+                title="Late Cancellation Penalty",
+                body=f"Your slot was cancelled within {settings.LAUNDRY_CANCELLATION_DEADLINE_MINUTES} minutes of start time. Your booking priority will be reduced for {settings.LAUNDRY_NOSHOW_PENALTY_HOURS} hours.",
+                notification_type=NotificationType.laundry_reminder,
+                db=db,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send late cancellation notification: {e}")
+
     return slot
 
 
@@ -324,3 +389,52 @@ async def report_machine_issue(
         f"{cancelled_count} slots cancelled."
     )
     return machine
+
+
+# ---------------------------------------------------------------------------
+# No-Show Detection (Sprint 5)
+# ---------------------------------------------------------------------------
+
+async def check_and_apply_noshow_penalties(db: AsyncSession) -> int:
+    """
+    Find booked slots whose date has passed and mark them as no_show.
+    Sends a push-enabled notification to each affected student.
+    Returns count of slots marked as no_show.
+    Called by Celery beat task hourly.
+    """
+    from services.notification_service import notify_user_with_push
+    from schemas.enums import NotificationType
+
+    yesterday = date.today() - timedelta(days=1)
+    result = await db.execute(
+        select(LaundrySlot)
+        .where(LaundrySlot.booking_status == LaundrySlotStatus.booked)
+        .where(LaundrySlot.slot_date <= yesterday)
+    )
+    slots = result.scalars().all()
+
+    count = 0
+    for slot in slots:
+        slot.booking_status = LaundrySlotStatus.no_show
+        slot.no_show_at = datetime.utcnow()
+        db.add(slot)
+        count += 1
+        logger.info(f"No-show recorded for slot {slot.id} (student {slot.student_id})")
+
+        if slot.student_id:
+            try:
+                await notify_user_with_push(
+                    recipient_id=slot.student_id,
+                    title="Missed Laundry Slot",
+                    body=f"You missed your laundry slot on {slot.slot_date} ({slot.slot_time}). Your booking priority will be reduced for {settings.LAUNDRY_NOSHOW_PENALTY_HOURS} hours.",
+                    notification_type=NotificationType.laundry_reminder,
+                    db=db,
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify student {slot.student_id} of no-show: {e}")
+
+    if count:
+        await db.commit()
+        logger.info(f"Processed {count} no-show penalties")
+
+    return count

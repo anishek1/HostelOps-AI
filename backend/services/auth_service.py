@@ -7,6 +7,10 @@ Routes call these functions — zero logic in routes.
 
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
+import hashlib
+import logging
+import secrets
+import uuid as _uuid
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -21,6 +25,8 @@ from config import settings
 from database import get_db
 from models.user import User
 from schemas.enums import UserRole
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Password hashing
@@ -61,13 +67,117 @@ def create_access_token(data: dict) -> str:
 
 def create_refresh_token(data: dict) -> str:
     """
-    Create a signed JWT refresh token.
+    Create a signed JWT refresh token (stateless).
     Expires in REFRESH_TOKEN_EXPIRE_DAYS.
+    NOTE: Login still uses this for the initial token pair.
+    The /refresh endpoint uses DB-backed tokens (create_refresh_token_db).
     """
     payload = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload.update({"exp": expire, "type": "refresh"})
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+# ---------------------------------------------------------------------------
+# DB-backed Refresh Token helpers (Sprint 5)
+# ---------------------------------------------------------------------------
+
+def hash_token(raw_token: str) -> str:
+    """Return SHA256 hex digest of a raw token string."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+async def create_refresh_token_db(
+    user_id: str,
+    ip_address: str | None,
+    db: AsyncSession,
+) -> str:
+    """
+    Generate a cryptographically random refresh token,
+    store its SHA256 hash in the DB, and return the raw token.
+    The raw token is returned ONCE and never stored in plaintext.
+    """
+    from models.refresh_token import RefreshToken
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_token(raw_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+
+    rt = RefreshToken(
+        user_id=user_id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        ip_address=ip_address,
+    )
+    db.add(rt)
+    await db.commit()
+    await db.refresh(rt)
+    logger.info(f"Created DB refresh token for user {user_id} (expires {expires_at.date()}")
+    return raw_token
+
+
+async def verify_refresh_token_db(
+    raw_token: str,
+    db: AsyncSession,
+) -> tuple["User | None", object | None]:
+    """
+    Verify a raw refresh token against stored hashes.
+    Returns (user, token_obj) if valid and not revoked/expired.
+    Returns (None, None) if invalid.
+    Returns (None, token_obj) if the token is found but revoked (theft detection).
+    """
+    from models.refresh_token import RefreshToken
+
+    token_hash = hash_token(raw_token)
+    result = await db.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    )
+    token_obj = result.scalar_one_or_none()
+
+    if not token_obj:
+        return None, None
+
+    if token_obj.revoked:
+        logger.warning(f"Revoked token reuse detected — possible theft for user {token_obj.user_id}")
+        return None, token_obj  # Caller handles theft detection
+
+    if token_obj.expires_at < datetime.now(timezone.utc):
+        logger.info(f"Expired refresh token used for user {token_obj.user_id}")
+        return None, None
+
+    user = await db.get(User, token_obj.user_id)
+    return user, token_obj
+
+
+async def revoke_refresh_token(token_obj, db: AsyncSession) -> None:
+    """Mark a single refresh token as revoked."""
+    token_obj.revoked = True
+    db.add(token_obj)
+    await db.commit()
+    await db.refresh(token_obj)
+    logger.info(f"Revoked refresh token {token_obj.id}")
+
+
+async def revoke_all_user_tokens(user_id: str, db: AsyncSession) -> int:
+    """
+    Revoke all active refresh tokens for a user.
+    Called on logout or when token theft is detected.
+    Returns count of tokens revoked.
+    """
+    from models.refresh_token import RefreshToken
+
+    result = await db.execute(
+        select(RefreshToken)
+        .where(RefreshToken.user_id == user_id)
+        .where(RefreshToken.revoked == False)  # noqa: E712
+    )
+    tokens = result.scalars().all()
+    for t in tokens:
+        t.revoked = True
+        db.add(t)
+    await db.commit()
+    logger.info(f"Revoked {len(tokens)} refresh tokens for user {user_id}")
+    return len(tokens)
 
 
 def decode_token(token: str) -> dict:
@@ -218,7 +328,7 @@ async def register_user(payload, db: AsyncSession):
         created_at=user.created_at,
     )
 
-async def login_user(payload, db: AsyncSession):
+async def login_user(payload, db: AsyncSession, ip_address: str | None = None):
     from schemas.auth import Token
     result = await db.execute(
         select(User).where(User.room_number == payload.room_number)
@@ -245,9 +355,13 @@ async def login_user(payload, db: AsyncSession):
         )
 
     token_data = {"sub": str(user.id), "role": user.role.value}
+    access_token = create_access_token(token_data)
+    # Sprint 5: use DB-backed refresh token for rotation + theft detection
+    raw_refresh = await create_refresh_token_db(str(user.id), ip_address, db)
+    logger.info(f"User {user.id} logged in from {ip_address}")
     return Token(
-        access_token=create_access_token(token_data),
-        refresh_token=create_refresh_token(token_data),
+        access_token=access_token,
+        refresh_token=raw_refresh,
         token_type="bearer",
     )
 

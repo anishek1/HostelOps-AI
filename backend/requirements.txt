@@ -33,3 +33,6 @@ langchain-groq==0.2.4
 
 # Push Notifications
 pywebpush==2.0.0
+
+# Sprint 5: In-memory TTL cache for hostel config
+cachetools==5.5.0
