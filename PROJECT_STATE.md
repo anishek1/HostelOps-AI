@@ -408,29 +408,58 @@ INTAKE → CLASSIFIED → AWAITING_APPROVAL → ASSIGNED → IN_PROGRESS → RES
 
 ---
 
-### Sprint 5 — Config, Push & Analytics (COMPLETE ✅)
-**Completed:** March 2026
-**Goal:** Implement Hostel Config, JWT Refresh, Web Push Notifications, Laundry No-Show Penalties, Analytics, and Cancellation Deadline.
+### Sprint 5 — Push Notifications + Analytics + JWT Refresh + Laundry No-Show + Hostel Config ✅
 
-#### What was built:
-- **Hostel Config:** DB-backed operational thresholds `hostel_config` table with fallback to `.env`, accessible to wardens via PATCH. 
-- **DB-Backed JWT Refresh Tokens:** SHA256 hashed refresh tokens for security with 30-day rotation, full logout mechanism, and theft detection (invalid reuse invokes full revocation).
-- **Push Notifications:** `pywebpush` integration linked to `notification_service`. Subscription system added (`POST /api/push/subscribe`).
-- **Laundry No-Show Penalties:** `no_show` status implemented; priority penalties (`0.1`) algorithm added for `LAUNDRY_NOSHOW_PENALTY_HOURS` when slot skipped or late-cancelled. Celery beat schedules to enforce penalties hourly.
-- **Analytics & Metrics:** Comprehensive `metrics_service` for §6.2 defining misclassification rate, mess-participation, override-rate, queue-latency, no-show rate.
-- **Audit Log IP:** Route capture of `request.client.host` pushed to `audit_logs` `ip_address` field directly during state changes.
+**What was built:**
+- `backend/models/hostel_config.py` — hostel-level config table, replaces hardcoded .env thresholds
+- `backend/models/refresh_token.py` — JWT refresh token storage (SHA256 hashed, never raw)
+- `backend/models/push_subscription.py` — browser push subscription storage
+- `backend/services/hostel_config_service.py` — config CRUD with in-memory cache (TTL 5 mins), falls back to .env
+- `backend/services/push_service.py` — pywebpush integration, fire-and-forget, removes 410 Gone subscriptions
+- `backend/services/metrics_service.py` — all 7 PRD evaluation metrics computed on-demand
+- `backend/services/auth_service.py` — updated with refresh token generation, rotation, theft detection
+- `backend/services/notification_service.py` — updated: notify_user() now calls push_service after every in-app notification
+- `backend/services/complaint_service.py` — updated: transition_complaint() accepts ip_address param
+- `backend/services/laundry_service.py` — updated: no-show detection, priority penalty (0.1x for 48hrs), late cancellation penalty
+- `backend/routes/hostel_config.py` — GET /api/config, PATCH /api/config
+- `backend/routes/push.py` — subscribe, unsubscribe, vapid-public-key
+- `backend/routes/analytics.py` — dashboard, complaints, mess, laundry, overrides endpoints
+- `backend/routes/auth.py` — updated: login returns refresh_token, /refresh and /logout endpoints added
+- `backend/tasks/laundry_tasks.py` — process_noshow_penalties (hourly), send_slot_reminders (every 30 mins)
+- `backend/celery_app.py` — updated with laundry beat tasks + laundry_tasks include
+- `backend/create_admin.py` — updated to seed hostel config on first run
+- `backend/schemas/hostel_config.py` — HostelConfigRead, HostelConfigUpdate
+- `backend/schemas/metrics.py` — DashboardMetrics with drift_alert flag
 
-#### ✅ Definition of Done — verified (via Gemini 3.1 Pro Audit):
-- 84 items verified and passed.
-- Server starts clean: 48 total routes operational.
-- Database stands perfectly at migration head (`80db1c48cf9d`) with no errors.
-- New celery entries integrated (noshow penalizer, slot reminders).
+**New Alembic migrations:**
+- hostel_config table
+- refresh_tokens table
+- push_subscriptions table
+- no_show value added to laundryslostatus enum
+- ip_address column added to audit_log table
 
-#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
-**Deviation 9 — No-Show Enum PostgreSQL Alter Type:**
-- **What happened:** Alembic autogen does not detect Python `Enum` modifications in Postgres.
-- **Fix applied:** Created migration with raw SQL `op.execute("ALTER TYPE laundryslostatus ADD VALUE IF NOT EXISTS 'no_show'")`.
-- **Rule going forward:** If dynamically adding to an Enum in the schema, always execute `ALTER TYPE` SQL in alembic.
+### Sprint 5 Deviations
+
+**Deviation 1 — Detailed analytics endpoints return stubs (deferred to Sprint 6)**
+- `GET /api/analytics/complaints`, `GET /api/analytics/mess`, `GET /api/analytics/laundry` return stub responses.
+- `GET /api/analytics/dashboard` and `GET /api/analytics/overrides` are fully implemented.
+- Full detailed analytics will be completed alongside the warden dashboard in Sprint 6.
+- Rule: Do not implement these endpoints until Sprint 6 frontend work begins.
+
+**Deviation 2 — POST /api/auth/logout revokes ALL user tokens not just current session**
+- More secure than spec (which said "revoke current token only").
+- Intentional — invalidates all sessions on logout.
+- Rule: This is the accepted behavior. Do not change to single-token revocation.
+
+**Deviation 3 — override_log uses warden_id not corrected_by**
+- `OverrideLog` model field is `warden_id` not `corrected_by`.
+- All analytics queries use `warden_id`. Never use `corrected_by`.
+- Rule: Always use `warden_id` when referencing who performed the override.
+
+**Deviation 4 — no_show enum value missing from PostgreSQL on first deploy**
+- `laundryslostatus` enum did not have `no_show` until Alembic migration `8d59bc56aa84` was run.
+- Migration `8d59bc56aa84_add_no_show_to_laundryslostatus_enum.py` added it.
+- Rule: Always run `alembic upgrade head` after pulling new code.
 
 ---
 
@@ -461,9 +490,9 @@ CELERY_BROKER_URL=redis://default:PASSWORD@HOST:PORT
 CELERY_RESULT_BACKEND=redis://default:PASSWORD@HOST:PORT
 
 # Push Notifications (Sprint 5)
-VAPID_PUBLIC_KEY=<your_public_key>
-VAPID_PRIVATE_KEY=<your_private_key>
-VAPID_CLAIM_EMAIL=mailto:your_email@example.com
+VAPID_PRIVATE_KEY=
+VAPID_PUBLIC_KEY=
+VAPID_CLAIM_EMAIL=admin@hostelops.ai
 
 # Agent Thresholds
 COMPLAINT_CONFIDENCE_THRESHOLD=0.85
@@ -538,13 +567,30 @@ If you are reading this to verify the current state of the project, check every 
 ### Sprint 5 Verification (COMPLETE ✅)
 
 **Code Audit — Gemini 3.1 Pro**
-- Result: PASS — 84 items passed, 0 failures, 0 new deviations affecting core systems.
-- All golden rules confirmed: logger, db.refresh, UUID validators, WARDEN_ROLES, enum migrations.
+- First audit: FAIL — 3 failures
+- Fixes applied: hostel config seeding, push in notify_user, audit log IP
+- Re-verification: PASS — 0 failures, 1 acceptable warning (logout revokes all tokens)
 
-**Manual Checks:**
-- Server startup: ✅ PASS (0 import errors)
-- Routes Registered: ✅ PASS (48 routes active)
-- Migrations: ✅ PASS (DB at head `80db1c48cf9d`)
+**Manual Checks — 9/12 PASS, 3 PARTIAL (March 17, 2026)**
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Hostel config GET + PATCH | ✅ PASS | All fields, update works |
+| JWT refresh token | ✅ PASS | Login returns both tokens |
+| Token rotation | ✅ PASS | Revoked token reuse detected, all sessions invalidated |
+| Logout | ✅ PASS | HTTP 200, tokens_revoked: 1 |
+| VAPID public key | ✅ PASS | Key returned without auth |
+| Push subscribe | ✅ PASS | Subscription saved |
+| Dashboard metrics | ✅ PASS | All 7 metrics + drift_alert |
+| Complaints analytics | ⚠️ PARTIAL | Stub — deferred to Sprint 6 |
+| Mess analytics | ⚠️ PARTIAL | Stub — deferred to Sprint 6 |
+| Laundry analytics | ⚠️ PARTIAL | Stub — deferred to Sprint 6 |
+| Override analytics | ✅ PASS | 1 override returned from Sprint 3 tests |
+| Celery beat tasks | ✅ PASS | Beat running, check-approval-timeouts fired |
+
+Issues found and fixed during manual checks:
+1. `no_show` missing from laundryslostatus PostgreSQL enum → added via SQL + migration
+2. Override analytics used `corrected_by` instead of `warden_id` → fixed in analytics route
 
 ### Sprint 4 Verification (COMPLETE ✅)
 
@@ -690,8 +736,8 @@ Sprint 1: ✅ Complete and verified
 Sprint 2: ✅ Complete, verified, human-checked (9/9)
 Sprint 3: ✅ Complete, verified, human-checked (9/9)
 Sprint 4: ✅ Complete, verified, human-checked (11/11)
-Sprint 5: ✅ Complete and verified (84/84)
-Sprint 6: ⏳ Starting next
+Sprint 5: ✅ Complete, verified, human-checked (9 PASS, 3 PARTIAL — stubs deferred to Sprint 6)
+Sprint 6: ⏳ Starting next — React PWA Frontend
 Your task: [DESCRIBE TASK]
 ```
 
@@ -735,6 +781,10 @@ Paste this entire document into the new AI and say:
 18. **Any new enum value used in Python code MUST have an Alembic migration** that adds it to the PostgreSQL enum. Check the DB enum before using any new value.
 19. **WARDEN_ROLES must always include assistant_warden, warden, AND chief_warden** — never assume warden-level access means just `warden` role.
 20. **Event loop is closed warning in Celery on Windows is non-fatal.** The `route_to_laundry_agent` and `route_to_mess_agent` tasks may show this warning on first attempt in `--pool=solo` dev mode on Windows. They retry automatically and succeed. Do not add workarounds — this does not occur on Linux/Railway production.
+21. **Never store raw refresh tokens** — always store SHA256 hash in DB. Raw token sent to client only once at login/refresh.
+22. **notify_user() is the single notification function** — never create separate push/in-app variants. Push is always called inside notify_user() with try/except, never separately.
+23. **Always run `alembic upgrade head` after pulling new code** — new migrations may have been added. Missing migrations cause 500 errors on first use of new enum values.
+24. **Analytics stub endpoints are intentional** — GET /api/analytics/complaints, /mess, /laundry return stubs until Sprint 6. Do not implement them before frontend work begins.
 
 ---
 
@@ -745,3 +795,11 @@ Paste this entire document into the new AI and say:
 - /mnt/user-data/outputs/SPRINT_4_VERIFICATION.md
 - /mnt/user-data/outputs/SPRINT_4_MANUAL_CHECKS.md
 - /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT4.md
+
+**Sprint 5:**
+- /mnt/user-data/outputs/SPRINT_5_PROMPT.md
+- /mnt/user-data/outputs/SPRINT_5_VERIFICATION.md
+- /mnt/user-data/outputs/SPRINT_5_REVERIFICATION.md
+- /mnt/user-data/outputs/SPRINT_5_FIXES.md
+- /mnt/user-data/outputs/SPRINT_5_MANUAL_CHECKS.md
+- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT5.md
