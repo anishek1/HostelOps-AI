@@ -113,7 +113,7 @@ async def get_override_logs(
             {
                 "id": str(log.id),
                 "complaint_id": str(log.complaint_id),
-                "corrected_by": str(log.corrected_by),
+                "corrected_by": str(log.warden_id),
                 "created_at": log.created_at.isoformat(),
             }
             for log in logs
