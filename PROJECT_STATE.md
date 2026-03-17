@@ -1,6 +1,6 @@
 # HostelOps AI — Project State Document & AI Onboarding Prompt
-# Version: Sprint 1 Complete
-# Last Updated: February 2026
+# Version: Sprint 5 Complete
+# Last Updated: March 2026
 # Purpose: This file is the single source of truth for the current state of the project.
 #          Paste this into ANY AI assistant (Opus, Sonnet, Gemini, or any future model)
 #          to instantly onboard it to the project. Update this file at the end of every sprint.
@@ -390,6 +390,47 @@ INTAKE → CLASSIFIED → AWAITING_APPROVAL → ASSIGNED → IN_PROGRESS → RES
 - `MessFeedbackCreate` and `MessFeedbackRead` use `meal` as the field name, not `meal_type`.
 - Rule: All mess feedback API requests and responses use `meal` not `meal_type`.
 
+---
+
+### Sprint 4 — Laundry & Mess Agents (COMPLETE ✅)
+**Completed:** March 2026
+**Goal:** Implement Laundry Agent & Mess Agent routing, classification, tools, and notification integration.
+
+#### What was built:
+- Laundry Agent to extract intent (book, status, report_issue, cancel) and slot parameters from complaints.
+- Mess Agent to route severe food feedback directly to wardens and update participation stats.
+- Integrated these into `complaint_service.py` to route to correct agent based on category.
+
+#### ✅ Definition of Done — verified:
+- Laundry slot booking and cancellations work seamlessly.
+- Mess dimensions logged and actionable.
+- Human checks verified 11/11 constraints.
+
+---
+
+### Sprint 5 — Config, Push & Analytics (COMPLETE ✅)
+**Completed:** March 2026
+**Goal:** Implement Hostel Config, JWT Refresh, Web Push Notifications, Laundry No-Show Penalties, Analytics, and Cancellation Deadline.
+
+#### What was built:
+- **Hostel Config:** DB-backed operational thresholds `hostel_config` table with fallback to `.env`, accessible to wardens via PATCH. 
+- **DB-Backed JWT Refresh Tokens:** SHA256 hashed refresh tokens for security with 30-day rotation, full logout mechanism, and theft detection (invalid reuse invokes full revocation).
+- **Push Notifications:** `pywebpush` integration linked to `notification_service`. Subscription system added (`POST /api/push/subscribe`).
+- **Laundry No-Show Penalties:** `no_show` status implemented; priority penalties (`0.1`) algorithm added for `LAUNDRY_NOSHOW_PENALTY_HOURS` when slot skipped or late-cancelled. Celery beat schedules to enforce penalties hourly.
+- **Analytics & Metrics:** Comprehensive `metrics_service` for §6.2 defining misclassification rate, mess-participation, override-rate, queue-latency, no-show rate.
+- **Audit Log IP:** Route capture of `request.client.host` pushed to `audit_logs` `ip_address` field directly during state changes.
+
+#### ✅ Definition of Done — verified (via Gemini 3.1 Pro Audit):
+- 84 items verified and passed.
+- Server starts clean: 48 total routes operational.
+- Database stands perfectly at migration head (`80db1c48cf9d`) with no errors.
+- New celery entries integrated (noshow penalizer, slot reminders).
+
+#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
+**Deviation 9 — No-Show Enum PostgreSQL Alter Type:**
+- **What happened:** Alembic autogen does not detect Python `Enum` modifications in Postgres.
+- **Fix applied:** Created migration with raw SQL `op.execute("ALTER TYPE laundryslostatus ADD VALUE IF NOT EXISTS 'no_show'")`.
+- **Rule going forward:** If dynamically adding to an Enum in the schema, always execute `ALTER TYPE` SQL in alembic.
 
 ---
 
@@ -419,10 +460,10 @@ GROQ_MODEL_NAME=llama-3.3-70b-versatile
 CELERY_BROKER_URL=redis://default:PASSWORD@HOST:PORT
 CELERY_RESULT_BACKEND=redis://default:PASSWORD@HOST:PORT
 
-# Push Notifications — NOT YET CONFIGURED (Sprint 6)
-VAPID_PUBLIC_KEY=
-VAPID_PRIVATE_KEY=
-VAPID_CLAIM_EMAIL=
+# Push Notifications (Sprint 5)
+VAPID_PUBLIC_KEY=<your_public_key>
+VAPID_PRIVATE_KEY=<your_private_key>
+VAPID_CLAIM_EMAIL=mailto:your_email@example.com
 
 # Agent Thresholds
 COMPLAINT_CONFIDENCE_THRESHOLD=0.85
@@ -434,6 +475,14 @@ APPROVAL_QUEUE_TIMEOUT_MINUTES=30
 
 # CORS
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# Sprint 5: Hostel Identity (fallback if no DB row in hostel_config)
+HOSTEL_NAME=HostelOps AI
+HOSTEL_MODE=college
+TOTAL_FLOORS=3
+TOTAL_STUDENTS_CAPACITY=200
+COMPLAINT_RATE_LIMIT_DAILY=5
+LAUNDRY_CANCELLATION_DEADLINE_MINUTES=15
 ```
 
 ---
@@ -485,6 +534,17 @@ When a new hostel deploys HostelOps AI, wardens need a one-time setup wizard to 
 ## SECTION 8 — VERIFICATION CHECKLIST (FOR OPUS OR ANY REVIEWER AI)
 
 If you are reading this to verify the current state of the project, check every item below against the actual codebase. Report exactly: ✅ PASS, ❌ FAIL, or ⚠️ DEVIATION (with explanation).
+
+### Sprint 5 Verification (COMPLETE ✅)
+
+**Code Audit — Gemini 3.1 Pro**
+- Result: PASS — 84 items passed, 0 failures, 0 new deviations affecting core systems.
+- All golden rules confirmed: logger, db.refresh, UUID validators, WARDEN_ROLES, enum migrations.
+
+**Manual Checks:**
+- Server startup: ✅ PASS (0 import errors)
+- Routes Registered: ✅ PASS (48 routes active)
+- Migrations: ✅ PASS (DB at head `80db1c48cf9d`)
 
 ### Sprint 4 Verification (COMPLETE ✅)
 
@@ -625,12 +685,13 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 5 (starting next)
+Current sprint: Sprint 6 (starting next)
 Sprint 1: ✅ Complete and verified
 Sprint 2: ✅ Complete, verified, human-checked (9/9)
 Sprint 3: ✅ Complete, verified, human-checked (9/9)
 Sprint 4: ✅ Complete, verified, human-checked (11/11)
-Sprint 5: ⏳ Starting next
+Sprint 5: ✅ Complete and verified (84/84)
+Sprint 6: ⏳ Starting next
 Your task: [DESCRIBE TASK]
 ```
 
