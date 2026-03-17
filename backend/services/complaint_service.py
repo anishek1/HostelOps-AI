@@ -56,6 +56,7 @@ async def transition_complaint(
     triggered_by: str,  # user_id or "system"
     db: AsyncSession,
     note: Optional[str] = None,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     The ONLY function allowed to change complaint.status.
@@ -106,7 +107,7 @@ async def transition_complaint(
         action=f"TRANSITION:{from_state.value}→{to_state.value}{action_note}",
         entity_type="complaint",
         entity_id=str(complaint_id),
-        ip_address="0.0.0.0",  # Server-side action; no client IP
+        ip_address=ip_address,
     )
     db.add(log_entry)
     await db.flush()
@@ -126,6 +127,7 @@ async def create_complaint(
     student_id: str,
     data,  # ComplaintCreate schema
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Creates a complaint in INTAKE state.
@@ -148,8 +150,19 @@ async def create_complaint(
     )
     db.add(complaint)
     await db.flush()  # Get the UUID
+    
+    log_entry = AuditLog(
+        user_id=uuid.UUID(student_id),
+        action="COMPLAINT_CREATED",
+        entity_type="complaint",
+        entity_id=str(complaint.id),
+        ip_address=ip_address,
+    )
+    db.add(log_entry)
+    await db.flush()
 
     return complaint
+    
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +372,7 @@ async def staff_update_progress(
     new_status: ComplaintStatus,
     staff_id: str,
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Staff updates complaint progress:
@@ -401,6 +415,7 @@ async def staff_update_progress(
         triggered_by=staff_id,
         db=db,
         note=f"Progress update by staff {staff_id}",
+        ip_address=ip_address,
     )
 
     # If resolved, notify student
@@ -434,6 +449,7 @@ async def student_confirm_resolution(
     complaint_id: str,
     student_id: str,
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Student confirms that a resolved complaint is satisfactorily resolved.
@@ -459,6 +475,16 @@ async def student_confirm_resolution(
 
     complaint.resolved_confirmed_at = datetime.now(timezone.utc)
     db.add(complaint)
+    
+    # Write to audit log since this changes state meaningfully
+    log_entry = AuditLog(
+        user_id=uuid.UUID(student_id),
+        action="RESOLUTION_CONFIRMED",
+        entity_type="complaint",
+        entity_id=str(complaint_id),
+        ip_address=ip_address,
+    )
+    db.add(log_entry)
     await db.flush()
 
     logger.info(f"[student_confirm_resolution] {complaint_id}: confirmed by {student_id}")
@@ -477,6 +503,7 @@ async def student_reopen_complaint(
     student_id: str,
     reopen_reason: str,
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Student reopens a resolved complaint with a reason.
@@ -509,6 +536,7 @@ async def student_reopen_complaint(
         triggered_by=student_id,
         db=db,
         note=f"Reopened by student — reason: {reopen_reason}",
+        ip_address=ip_address,
     )
 
     complaint.reopen_reason = reopen_reason

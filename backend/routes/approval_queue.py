@@ -6,7 +6,7 @@ Routes are thin — all logic in services/approval_queue_service.py.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -93,12 +93,14 @@ async def get_pending_approvals(
 )
 async def approve_suggestion(
     queue_item_id: str,
+    request: Request,
     current_user: User = Depends(require_role(*WARDEN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "0.0.0.0"
     try:
         complaint = await aqs.approve_ai_suggestion(
-            queue_item_id, str(current_user.id), db
+            queue_item_id, str(current_user.id), db, ip_address=client_ip
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -118,10 +120,12 @@ async def approve_suggestion(
 )
 async def override_suggestion(
     queue_item_id: str,
+    request: Request,
     body: OverrideRequest,
     current_user: User = Depends(require_role(*WARDEN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "0.0.0.0"
     try:
         complaint = await aqs.override_ai_suggestion(
             queue_item_id=queue_item_id,
@@ -131,6 +135,7 @@ async def override_suggestion(
             corrected_assignee_id=body.corrected_assignee_id,
             reason=body.reason,
             db=db,
+            ip_address=client_ip,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

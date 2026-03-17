@@ -87,9 +87,9 @@ def send_slot_reminders(self):
                     slot_start = datetime(today.year, today.month, today.day, h, m)
                     minutes_until = (slot_start - now).total_seconds() / 60
                     if 30 <= minutes_until <= 60 and slot.student_id:
-                        from services.notification_service import notify_user_with_push
+                        from services.notification_service import notify_user
                         from schemas.enums import NotificationType
-                        await notify_user_with_push(
+                        await notify_user(
                             recipient_id=slot.student_id,
                             title="Laundry Slot Reminder",
                             body=f"Your laundry slot starts at {start_str} today. Don't miss it!",

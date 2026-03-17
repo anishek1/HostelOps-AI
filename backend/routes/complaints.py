@@ -7,7 +7,7 @@ LLM classification runs asynchronously via Celery — routes return immediately.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,6 +134,7 @@ WARDEN_ROLES = (
     ),
 )
 async def file_complaint(
+    request: Request,
     data: ComplaintCreate,
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
@@ -146,10 +147,12 @@ async def file_complaint(
         "Rate limit exceeded. You can file up to 5 complaints per day.",
     )
 
+    client_ip = request.client.host if request.client else "0.0.0.0"
     complaint = await create_complaint(
         student_id=str(current_user.id),
         data=data,
         db=db,
+        ip_address=client_ip,
     )
     await db.flush()  # Ensure complaint.id is available before Celery task
 
@@ -262,16 +265,19 @@ async def get_complaint_timeline(
 )
 async def update_complaint_status(
     complaint_id: str,
+    request: Request,
     body: StatusUpdateRequest,
     current_user: User = Depends(require_role(*STAFF_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "0.0.0.0"
     try:
         updated = await staff_update_progress(
             complaint_id=complaint_id,
             new_status=body.status,
             staff_id=str(current_user.id),
             db=db,
+            ip_address=client_ip,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -291,14 +297,17 @@ async def update_complaint_status(
 )
 async def confirm_resolution(
     complaint_id: str,
+    request: Request,
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "0.0.0.0"
     try:
         complaint = await student_confirm_resolution(
             complaint_id=complaint_id,
             student_id=str(current_user.id),
             db=db,
+            ip_address=client_ip,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -322,16 +331,19 @@ async def confirm_resolution(
 )
 async def reopen_complaint(
     complaint_id: str,
+    request: Request,
     body: ReopenRequest,
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "0.0.0.0"
     try:
         updated = await student_reopen_complaint(
             complaint_id=complaint_id,
             student_id=str(current_user.id),
             reopen_reason=body.reason,
             db=db,
+            ip_address=client_ip,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -355,16 +367,19 @@ async def reopen_complaint(
 )
 async def escalate_complaint(
     complaint_id: str,
+    request: Request,
     body: EscalateRequest,
     current_user: User = Depends(require_role(*WARDEN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "0.0.0.0"
     try:
         complaint = await aqs.escalate_complaint(
             complaint_id=complaint_id,
             warden_id=str(current_user.id),
             reason=body.reason,
             db=db,
+            ip_address=client_ip,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

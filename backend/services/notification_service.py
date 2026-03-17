@@ -27,56 +27,34 @@ async def notify_user(
     """
     Write a notification record to the database.
     After commit, fires a best-effort push notification.
-    The caller is responsible for the outer commit — push fires AFTER.
     """
     notification = Notification(
         recipient_id=recipient_id,
         title=title,
         body=body,
         type=notification_type,
+        is_read=False
     )
     db.add(notification)
-    # Caller is responsible for committing the session
-    return notification
-
-
-async def notify_user_with_push(
-    recipient_id: uuid.UUID,
-    title: str,
-    body: str,
-    notification_type: NotificationType,
-    db: AsyncSession,
-) -> Notification:
-    """
-    Write a notification record AND send a best-effort push notification.
-    Use this variant when the caller wants auto-push delivery.
-    Commits the notification, then tries push (push failures are logged only).
-    """
-    from services.push_service import send_push_notification
-
-    notification = Notification(
-        recipient_id=recipient_id,
-        title=title,
-        body=body,
-        type=notification_type,
-    )
-    db.add(notification)
-    # Commit the in-app notification first — push must never block this
     await db.commit()
     await db.refresh(notification)
-
-    # Best-effort push — swallow all errors
+    
+    # Fire push notification (fire and forget)
+    from services.push_service import send_push_notification
     try:
         await send_push_notification(
             user_id=str(recipient_id),
             title=title,
             body=body,
-            db=db,
+            data={"type": notification_type.value},
+            db=db
         )
     except Exception as e:
-        logger.error(f"Push notification failed for user {recipient_id}: {e}")
-
+        logger.warning(f"[notify_user] Push notification failed for {recipient_id}: {e}")
+    
     return notification
+    
+
 
 
 async def notify_all_by_role(

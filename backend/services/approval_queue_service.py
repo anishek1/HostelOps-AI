@@ -60,6 +60,7 @@ async def approve_ai_suggestion(
     queue_item_id: str,
     warden_id: str,
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Warden approves the AI suggestion as-is.
@@ -94,6 +95,7 @@ async def approve_ai_suggestion(
         triggered_by=warden_id,
         db=db,
         note="Approved by warden — AI suggestion accepted",
+        ip_address=ip_address,
     )
 
     # Notify assigned staff
@@ -136,6 +138,7 @@ async def override_ai_suggestion(
     corrected_assignee_id: str,
     reason: OverrideReason,
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Warden overrides the AI suggestion with corrected values.
@@ -195,6 +198,7 @@ async def override_ai_suggestion(
         triggered_by=warden_id,
         db=db,
         note=f"Overridden by warden — reason: {reason.value}",
+        ip_address=ip_address,
     )
 
     # Notify assigned staff
@@ -230,6 +234,7 @@ async def escalate_complaint(
     warden_id: str,
     reason: str,
     db: AsyncSession,
+    ip_address: str = "0.0.0.0",
 ) -> Complaint:
     """
     Escalate a complaint to chief warden.
@@ -247,6 +252,7 @@ async def escalate_complaint(
         triggered_by=warden_id,
         db=db,
         note=f"Escalated by warden — reason: {reason}",
+        ip_address=ip_address,
     )
 
     # Notify all chief wardens

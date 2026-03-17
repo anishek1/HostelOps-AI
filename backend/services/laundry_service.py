@@ -249,9 +249,9 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
     # Notify student of late cancellation penalty (after commit — best effort)
     if penalty_applied and student_id_before_cancel:
         try:
-            from services.notification_service import notify_user_with_push
+            from services.notification_service import notify_user
             from schemas.enums import NotificationType
-            await notify_user_with_push(
+            await notify_user(
                 recipient_id=student_id_before_cancel,
                 title="Late Cancellation Penalty",
                 body=f"Your slot was cancelled within {settings.LAUNDRY_CANCELLATION_DEADLINE_MINUTES} minutes of start time. Your booking priority will be reduced for {settings.LAUNDRY_NOSHOW_PENALTY_HOURS} hours.",
@@ -402,7 +402,7 @@ async def check_and_apply_noshow_penalties(db: AsyncSession) -> int:
     Returns count of slots marked as no_show.
     Called by Celery beat task hourly.
     """
-    from services.notification_service import notify_user_with_push
+    from services.notification_service import notify_user
     from schemas.enums import NotificationType
 
     yesterday = date.today() - timedelta(days=1)
@@ -423,7 +423,7 @@ async def check_and_apply_noshow_penalties(db: AsyncSession) -> int:
 
         if slot.student_id:
             try:
-                await notify_user_with_push(
+                await notify_user(
                     recipient_id=slot.student_id,
                     title="Missed Laundry Slot",
                     body=f"You missed your laundry slot on {slot.slot_date} ({slot.slot_time}). Your booking priority will be reduced for {settings.LAUNDRY_NOSHOW_PENALTY_HOURS} hours.",

@@ -106,6 +106,17 @@ def create_admin() -> None:
     # Always run seed (idempotent)
     seed_laundry_machines()
 
+    import asyncio
+    from database import AsyncSessionLocal
+    from services.hostel_config_service import seed_default_config
+
+    async def _seed_config():
+        async with AsyncSessionLocal() as db:
+            await seed_default_config(db)
+            print("✅ Hostel config seeded (or already exists).")
+            
+    asyncio.run(_seed_config())
+
 
 def seed_laundry_machines() -> None:
     """
