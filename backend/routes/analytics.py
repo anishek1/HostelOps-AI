@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models.user import User
 from schemas.enums import UserRole
-from schemas.metrics import DashboardMetrics
+from schemas.metrics import (
+    ComplaintsAnalytics,
+    DashboardMetrics,
+    LaundryAnalytics,
+    MessAnalytics,
+)
 from services import metrics_service
 from services.auth_service import require_role
 
@@ -41,7 +46,7 @@ async def get_dashboard_metrics(
     return metrics
 
 
-@router.get("/complaints")
+@router.get("/complaints", response_model=ComplaintsAnalytics)
 async def get_complaints_analytics(
     days: int = Query(30, ge=1, le=90),
     category: Optional[str] = None,
@@ -49,15 +54,11 @@ async def get_complaints_analytics(
     current_user: User = Depends(require_role(*_WARDEN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Complaint breakdown analytics — Sprint 6 will populate full data."""
-    return {
-        "message": "Detailed complaints analytics — Sprint 6 implementation",
-        "period_days": days,
-        "filters": {"category": category, "status": status},
-    }
+    """Complaint breakdown analytics."""
+    return await metrics_service.get_complaints_analytics(days, category, status, db)
 
 
-@router.get("/mess")
+@router.get("/mess", response_model=MessAnalytics)
 async def get_mess_analytics(
     days: int = Query(7, ge=1, le=30),
     current_user: User = Depends(
@@ -65,14 +66,11 @@ async def get_mess_analytics(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mess feedback trend analytics — Sprint 6 will populate full data."""
-    return {
-        "message": "Mess analytics — use GET /api/mess/analytics/ for full data",
-        "period_days": days,
-    }
+    """Mess feedback trend analytics."""
+    return await metrics_service.get_mess_analytics(days, db)
 
 
-@router.get("/laundry")
+@router.get("/laundry", response_model=LaundryAnalytics)
 async def get_laundry_analytics(
     days: int = Query(7, ge=1, le=30),
     current_user: User = Depends(
@@ -80,13 +78,8 @@ async def get_laundry_analytics(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Laundry slot utilisation analytics — Sprint 6 will populate full data."""
-    noshow_rate = await metrics_service.get_laundry_noshow_rate(days, db)
-    return {
-        "period_days": days,
-        "laundry_noshow_rate": noshow_rate,
-        "message": "Detailed laundry analytics coming in Sprint 6",
-    }
+    """Laundry slot utilization analytics."""
+    return await metrics_service.get_laundry_analytics(days, db)
 
 
 @router.get("/overrides")

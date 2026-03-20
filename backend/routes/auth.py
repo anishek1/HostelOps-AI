@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from middleware.rate_limiter import RateLimiter, get_rate_limiter
-from schemas.auth import LoginRequest, Token
+from schemas.auth import LoginRequest, LoginResponse, Token
 from schemas.user import UserCreate, UserRead
 from services.auth_service import (
     create_access_token,
@@ -51,7 +51,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 # Login
 # ---------------------------------------------------------------------------
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginResponse)
 async def login(
     request: Request,
     payload: LoginRequest,

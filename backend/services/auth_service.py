@@ -342,16 +342,22 @@ async def login_user(payload, db: AsyncSession, ip_address: str | None = None):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not user.is_verified:
+    if getattr(user, "is_rejected", False):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account not yet verified. Please wait for Assistant Warden approval.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"detail": "Registration not approved", "reason": user.rejection_reason},
         )
 
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Account has been deactivated. Please contact the warden.",
+        )
+
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account not yet verified. Please wait for Assistant Warden approval.",
         )
 
     token_data = {"sub": str(user.id), "role": user.role.value}
@@ -359,9 +365,13 @@ async def login_user(payload, db: AsyncSession, ip_address: str | None = None):
     # Sprint 5: use DB-backed refresh token for rotation + theft detection
     raw_refresh = await create_refresh_token_db(str(user.id), ip_address, db)
     logger.info(f"User {user.id} logged in from {ip_address}")
-    return Token(
+    
+    from schemas.auth import LoginResponse
+    from schemas.user import UserRead
+    return LoginResponse(
         access_token=access_token,
         refresh_token=raw_refresh,
         token_type="bearer",
+        user=UserRead.model_validate(user)
     )
 

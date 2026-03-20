@@ -3,6 +3,7 @@ from __future__ import annotations
 models/user.py — HostelOps AI
 ================================
 SQLAlchemy ORM model for the User entity.
+Sprint 6: Added is_rejected, rejection_reason, has_seen_onboarding columns.
 """
 
 import uuid
@@ -37,6 +38,11 @@ class User(Base):
     erp_document_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Sprint 6: Registration rejection flow
+    is_rejected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    # Sprint 6: Onboarding flag
+    has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

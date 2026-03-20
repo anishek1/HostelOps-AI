@@ -99,6 +99,11 @@ class NotificationType(str, Enum):
     registration_pending = "registration_pending"
     complaint_escalated = "complaint_escalated"
     complaint_reopened = "complaint_reopened"
+    # Sprint 6: registration lifecycle + account notifications
+    registration_approved = "registration_approved"
+    registration_rejected = "registration_rejected"
+    password_reset = "password_reset"
+    account_deactivated = "account_deactivated"
 
 
 class ClassifiedBy(str, Enum):
