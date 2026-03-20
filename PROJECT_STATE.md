@@ -1,9 +1,9 @@
 # HostelOps AI — Project State Document & AI Onboarding Prompt
-# Version: Sprint 6 Complete
+# Version: Sprint 6 Complete — Sprint 7 Starting
 # Last Updated: March 2026
-# Purpose: This file is the single source of truth for the current state of the project.
-#          Paste this into ANY AI assistant (Opus, Sonnet, Gemini, or any future model)
-#          to instantly onboard it to the project. Update this file at the end of every sprint.
+# Purpose: Single source of truth for the current project state.
+#          Paste into ANY AI assistant to instantly onboard it.
+#          Update at the end of every sprint.
 
 ---
 
@@ -17,8 +17,8 @@ You are being onboarded as a developer/reviewer for HostelOps AI. Read this enti
 4. What has been built, what deviates from the original plan, and what is next
 5. Rules you must follow without exception
 
-After reading, your job depends on why you were called:
-- **If called for verification:** audit the codebase against this document and report exactly what matches, what deviates, and what is missing.
+After reading:
+- **If called for verification:** audit the codebase against this document and report what matches, what deviates, and what is missing.
 - **If called for development:** pick up from the current sprint and follow CONVENTIONS.md exactly.
 - **If called for debugging:** fix only what is broken, do not refactor anything that is working.
 - **Never** change something that is working just because you would have done it differently.
@@ -31,9 +31,9 @@ HostelOps AI is an autonomous operations management system for hostels (college-
 
 - **Agent 1 (Orchestrator):** Receives all student complaints, classifies them using an LLM, and routes them to the correct agent or staff member. Uses confidence-gated action — acts automatically when confident, escalates to human when uncertain.
 - **Agent 2 (Laundry Agent):** Manages laundry slot booking with a fairness algorithm. Handles machine breakdowns and priority requests.
-- **Agent 3 (Mess Agent):** Monitors mess feedback across 5 dimensions (food quality, quantity, hygiene, variety, timing). Detects chronic dissatisfaction and sudden spikes. Alerts warden and mess manager proactively.
+- **Agent 3 (Mess Agent):** Monitors mess feedback across 5 dimensions. Detects chronic dissatisfaction and sudden spikes. Alerts warden and mess manager proactively.
 
-**The system is designed to be built entirely by an AI coding assistant.** Every convention, schema, and pattern is chosen to maximise AI coding effectiveness.
+**Deployment model:** Multi-tenant. One deployment serves multiple hostels. Each hostel has a unique hostel code (e.g. `IGBH-4821`) that students enter during registration.
 
 **Full product specification is in PRD.md** — always reference it for feature details.
 **All coding rules are in CONVENTIONS.md** — always follow it without exception.
@@ -42,18 +42,17 @@ HostelOps AI is an autonomous operations management system for hostels (college-
 
 ## SECTION 2 — NON-NEGOTIABLE CONSTRAINTS
 
-These constraints were decided at the start and cannot be changed under any circumstances:
-
 | Constraint | Detail |
 |-----------|--------|
 | Zero cost | No paid APIs. No paid services beyond Railway hobby ($5/month optional). |
-| Open-source LLM | Groq free tier + Llama 3. Never swap to a paid model. |
-| No paid infrastructure | Neon/Supabase free tier for DB, Upstash free for Redis, Railway free for hosting. |
+| Open-source LLM | Groq free tier + llama-3.3-70b-versatile. Never swap to a paid model. |
+| No paid infrastructure | Supabase free for DB, Upstash free for Redis, Railway free for hosting. |
 | AI-first development | Every file, folder, and pattern is optimised for AI coding assistant use. |
 | All three agents in V1 | Never reduce scope to a single agent. All three ship together. |
 | LangChain for V1 | LangGraph is documented as the V2 upgrade path but not implemented in V1. |
 | Async-first | Every route, DB call, and LLM call is async. No synchronous blocking code. |
 | Pydantic as source of truth | Every entity has a Pydantic schema. TypeScript types mirror them exactly. |
+| Multi-tenant from Sprint 7 | Every query must filter by hostel_id after Sprint 7. |
 
 ---
 
@@ -61,16 +60,16 @@ These constraints were decided at the start and cannot be changed under any circ
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
-| Frontend | React 18 + TypeScript + Vite + PWA + Shadcn/UI | |
-| Backend | Python + FastAPI + Pydantic v2 + SQLAlchemy + Alembic | |
+| Frontend | React 18 + TypeScript + Vite + PWA + Tailwind + Shadcn/UI | Sprint F |
+| Backend | Python + FastAPI + Pydantic v2 + SQLAlchemy + Alembic | Sprints 1-6 complete |
 | Agent Orchestration | LangChain | LangGraph is V2 upgrade path |
-| LLM | Groq free tier + Llama 3 (llama3-8b-8192) | Open-source model |
-| Task Queue | Celery + Upstash Redis (free tier) | |
-| Database | PostgreSQL via Supabase OR Neon (free tier) | See DB notes in Section 5 |
-| Auth | JWT via python-jose + bcrypt (direct, NOT passlib) | passlib removed — see Section 5 |
-| Hosting | Railway (free tier) | |
-| Push Notifications | Web Push API (pywebpush backend) | |
-| Config | python-dotenv + pydantic-settings | |
+| LLM | Groq free tier + llama-3.3-70b-versatile | llama3-8b-8192 DECOMMISSIONED March 2026 |
+| Task Queue | Celery + Upstash Redis (free tier) | Windows dev: --pool=solo |
+| Database | PostgreSQL via Supabase (free tier) | Port 5432 always, NEVER 6543 |
+| Auth | JWT via python-jose + bcrypt (direct, NOT passlib) | passlib permanently removed |
+| Hosting | Railway | Sprint D: Docker Compose |
+| Push Notifications | Web Push API (pywebpush) | VAPID keys in .env |
+| Config | python-dotenv + pydantic-settings | All secrets in .env |
 
 ---
 
@@ -78,37 +77,85 @@ These constraints were decided at the start and cannot be changed under any circ
 
 ```
 /HostelOPS AI
-├── PRD.md                          ← Full product spec (always reference this)
-├── CONVENTIONS.md                  ← Coding rules (always follow this)
-├── PROJECT_STATE.md                ← This file (update after every sprint)
-├── .gitignore                      ← .env is in here
+├── PRD.md
+├── CONVENTIONS.md
+├── PROJECT_STATE.md
+├── .gitignore
 │
 ├── /backend
-│   ├── main.py                     ← FastAPI app entry point
-│   ├── config.py                   ← ALL env vars loaded here via pydantic-settings
-│   ├── database.py                 ← SQLAlchemy async engine + session
-│   ├── /models                     ← SQLAlchemy ORM models
-│   ├── /schemas                    ← Pydantic v2 schemas (source of truth)
-│   │   └── enums.py                ← All enums (UserRole, ComplaintStatus, etc.)
-│   ├── /routes                     ← FastAPI APIRouter files (thin, no logic)
-│   ├── /services                   ← All business logic
-│   ├── /agents                     ← LangChain agent definitions
-│   ├── /tools                      ← Typed agent tool callables
-│   ├── /tasks                      ← Celery task definitions
-│   ├── /middleware                 ← Rate limiter, prompt sanitizer
-│   ├── /migrations                 ← Alembic migration files
-│   ├── .env                        ← NOT committed to git
-│   └── .env.example                ← Committed — all variable names, no values
+│   ├── main.py
+│   ├── config.py
+│   ├── database.py
+│   ├── celery_app.py             ← sys.path fix MUST stay at very top
+│   ├── create_admin.py           ← seeds admin + machines + hostel config
+│   ├── /models
+│   │   ├── user.py               ← has is_rejected, rejection_reason, has_seen_onboarding
+│   │   ├── complaint.py          ← has resolved_confirmed_at, reopen_reason, is_priority
+│   │   ├── audit_log.py          ← has ip_address column
+│   │   ├── approval_queue.py
+│   │   ├── override_log.py       ← warden_id field (not corrected_by)
+│   │   ├── notification.py
+│   │   ├── machine.py            ← named machine.py (Sprint 4 deviation)
+│   │   ├── laundry_slot.py       ← booking_status + slot_date + slot_time
+│   │   ├── mess_feedback.py      ← 5 separate columns: food_quality, hygiene, menu_variety, food_quantity, timing
+│   │   ├── mess_alert.py
+│   │   ├── hostel_config.py      ← single row per hostel, cached 5 mins
+│   │   ├── refresh_token.py      ← revoked column (not is_revoked)
+│   │   └── push_subscription.py
+│   ├── /schemas
+│   │   ├── enums.py
+│   │   ├── user.py               ← StaffCreate + StaffRead added Sprint 6
+│   │   ├── complaint.py
+│   │   ├── laundry.py
+│   │   ├── mess.py
+│   │   ├── approval_queue.py
+│   │   ├── override_log.py
+│   │   ├── notification.py
+│   │   ├── hostel_config.py
+│   │   └── metrics.py            ← DashboardMetrics with all 7 metrics + pending counts
+│   ├── /routes
+│   │   ├── auth.py               ← login returns full user object
+│   │   ├── users.py              ← reject, reset-password, staff CRUD, /me, onboarding
+│   │   ├── complaints.py
+│   │   ├── approval_queue.py
+│   │   ├── laundry.py
+│   │   ├── mess.py
+│   │   ├── notifications.py
+│   │   ├── push.py
+│   │   ├── analytics.py          ← all 3 stubs replaced with real data in Sprint 6
+│   │   └── hostel_config.py
+│   ├── /services
+│   │   ├── auth_service.py       ← bcrypt ONLY, no passlib
+│   │   ├── user_service.py       ← reject_user, warden_reset_password, create_staff_account
+│   │   ├── complaint_service.py  ← VALID_TRANSITIONS single source of truth
+│   │   ├── approval_queue_service.py
+│   │   ├── override_log_service.py
+│   │   ├── notification_service.py ← notify_user() calls push inside try/except
+│   │   ├── laundry_service.py
+│   │   ├── mess_service.py
+│   │   ├── push_service.py
+│   │   ├── metrics_service.py    ← all 7 metrics + complaints/mess/laundry analytics
+│   │   ├── hostel_config_service.py ← cached config, falls back to .env
+│   │   └── fallback_classifier.py
+│   ├── /agents
+│   │   ├── agent_complaint.py
+│   │   ├── agent_laundry.py
+│   │   └── agent_mess.py
+│   ├── /tools
+│   │   ├── complaint_tools.py
+│   │   ├── laundry_tools.py
+│   │   └── mess_tools.py
+│   ├── /tasks
+│   │   ├── complaint_tasks.py    ← route_to_laundry_agent + route_to_mess_agent
+│   │   ├── approval_tasks.py     ← check_approval_timeouts (every 15 mins)
+│   │   ├── laundry_tasks.py      ← process_noshow_penalties (hourly) + send_slot_reminders (30 mins)
+│   │   └── mess_tasks.py         ← analyze_daily_mess_feedback (10pm) + check_participation_alert (8am)
+│   ├── /middleware
+│   │   ├── rate_limiter.py
+│   │   └── prompt_sanitizer.py
+│   └── /migrations
 │
-└── /frontend
-    └── /src
-        ├── /types                  ← TypeScript types (mirror Pydantic schemas)
-        ├── /api                    ← All API call functions
-        ├── /components             ← Shadcn/UI reusable components
-        ├── /pages                  ← Page-level components
-        ├── /hooks                  ← Custom React hooks
-        ├── /context                ← AuthContext, NotificationContext
-        └── /lib                    ← rolePermissions.ts, utils.ts
+└── /frontend                     ← Not started — Sprint F
 ```
 
 ---
@@ -120,758 +167,301 @@ This is the most important section. Every deviation from the original plan is do
 ---
 
 ### SPRINT 1 — Foundation (COMPLETE ✅)
-**Completed:** February 2026
 **Goal:** Project setup, auth system, all schemas, all models, database migrations.
 
-#### What was built:
-- Full backend project structure following CONVENTIONS.md
-- All Pydantic schemas in `/backend/schemas/` including `enums.py`
-- All SQLAlchemy models in `/backend/models/` — 10 tables total
-- Alembic migrations run successfully — all 10 tables created in database
-- JWT authentication system — register, login, verify, deactivate
-- Role-based access control via FastAPI dependencies
-- Full frontend scaffold — React + TypeScript + Vite + PWA
-- All page placeholders created (StudentDashboard, WardenDashboard, etc.)
-- TypeScript types in `/frontend/src/types/` mirroring all Pydantic schemas
-- Auth API functions and AuthContext
+**What was built:** Full backend structure, all Pydantic schemas, all SQLAlchemy models (10 tables), Alembic migrations, JWT auth system, role-based access control, React+TypeScript frontend scaffold, TypeScript types, AuthContext, Login page.
 
-#### ✅ Definition of Done — verified:
-- Backend starts with `uvicorn main:app --reload` without errors ✅
-- All 10 tables created in Supabase ✅
-- `POST /api/auth/register` creates user with `is_verified=False` ✅
-- `POST /api/auth/login` returns 401 for unverified user ✅
-- `POST /api/users/{id}/verify` sets `is_verified=True` ✅
-- `POST /api/auth/login` returns JWT with correct role claim after verification ✅
-- Frontend runs at `http://localhost:5173` without errors ✅
-
-#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
-
-**Deviation 1 — passlib removed, bcrypt used directly**
-- **Original plan:** Use `passlib[bcrypt]` for password hashing
-- **What happened:** `passlib` is unmaintained and clashes with modern `bcrypt` package, causing `ValueError: password cannot be longer than 72 bytes`
-- **Fix applied:** Removed passlib entirely. Using `bcrypt` library directly in `auth_service.py`
-- **Rule going forward:** NEVER import or use passlib anywhere in this project. Always use the `hash_password()` and `verify_password()` functions from `auth_service.py`
-- **Current implementation:**
-```python
-import bcrypt
-
-def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    pwd_bytes = password.encode('utf-8')[:72]  # Safe truncation
-    hashed = bcrypt.hashpw(pwd_bytes, salt)
-    return hashed.decode('utf-8')
-
-def verify_password(plain: str, hashed: str) -> bool:
-    pwd_bytes = plain.encode('utf-8')[:72]
-    hash_bytes = hashed.encode('utf-8')
-    return bcrypt.checkpw(pwd_bytes, hash_bytes)
-```
-
-**Deviation 2 — Database port changed to 5432 (direct connection)**
-- **Original plan:** Use Supabase pooler on port 6543
-- **What happened:** pgBouncer transaction pooling on port 6543 conflicts with asyncpg prepared statement caching, causing `DuplicatePreparedStatementError`
-- **Fix applied:** Changed DATABASE_URL in `.env` to use port 5432 (direct connection, bypasses pgBouncer)
-- **Rule going forward:** DATABASE_URL must always use port 5432 for Supabase. Never change this back to 6543 unless explicitly handling the pgBouncer conflict with `statement_cache_size: 0`
-- **Format:** `postgresql+asyncpg://postgres.PROJECT_REF:PASSWORD@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres`
-
-**Deviation 3 — verify_warden.py debug script**
-- **What happened:** A debug script `verify_warden.py` was created to manually verify the first warden account in the database
-- **Fix applied:** Script deleted from codebase
-- **Rule going forward:** The bootstrap problem (how does the first admin get verified?) must be solved with a proper `create_admin.py` script in Sprint 2 — Task 0. This script runs once during deployment setup, never via an API endpoint.
+**Key deviations:**
+- passlib removed — bcrypt used directly in auth_service.py with [:72] truncation. NEVER use passlib.
+- DATABASE_URL uses port 5432 (direct), never 6543 (pgBouncer conflicts with asyncpg)
+- Business logic moved out of routes into services (user_service.py created)
+- .env.example lives in backend/ not project root
 
 ---
 
-> **Next sprint will be added here once Sprint 1 has been fully verified and committed.**
+### SPRINT 2 — Agent 1 + Celery Pipeline (COMPLETE ✅)
+**Goal:** Complaint filing, LLM classification, Celery pipeline, fallback classifier.
+
+**What was built:** celery_app.py, prompt_sanitizer.py, fallback_classifier.py, complaint_service.py, notification_service.py, override_log_service.py, user_service.py, agent_complaint.py, complaint_tasks.py, complaint_tools.py (6 tools), routes/complaints.py.
+
+**Key deviations:**
+- Windows Celery requires --pool=solo (dev only, NOT production/Railway)
+- run_async() wrapper in complaint_tasks.py for calling async tools from Celery
+- psycopg2-binary added for sync engine (Celery needs sync DB)
+- VALID_TRANSITIONS imported from complaint_service.py — never redefined elsewhere
+- complaint.status assignment ONLY inside transition_complaint()
+
+**Post-sprint fixes:**
+- Hardcoded 0.85 threshold replaced with settings.COMPLAINT_CONFIDENCE_THRESHOLD
+- GROQ model llama3-8b-8192 decommissioned → updated to llama-3.3-70b-versatile
+- logger not defined in complaint_tasks.py → added import logging + getLogger
+- Celery sys.path fix added to celery_app.py
 
 ---
 
-### SPRINT 2 — Agent 1 Core (COMPLETE ✅)
-**Completed:** February 2026
-**Goal:** Celery + Redis connected, complaint filing, LLM classification via Groq, async pipeline, state machine, fallback classifier, all 6 Agent 1 tools.
+### SPRINT 3 — Agent 1 Complete (COMPLETE ✅)
+**Goal:** Approval queue, override logging, rate limiting, resolution flow, anonymous complaints, timeline.
 
-#### What was built:
-- `backend/create_admin.py` — one-time bootstrap script to create first verified admin. Idempotent (safe to run multiple times). Replaces the deleted `verify_warden.py` debug script from Sprint 1.
-- `backend/celery_app.py` — Celery app instance connected to Upstash Redis. `task_acks_late=True` prevents lost tasks on crash.
-- `backend/middleware/prompt_sanitizer.py` — sanitizes all free-text before it reaches the LLM. Strips HTML, truncates, detects injection patterns, returns `SanitizationResult` with `was_flagged` flag.
-- `backend/services/fallback_classifier.py` — pure keyword-based classifier. No external dependencies. Called when LLM fails after all retries. Always sets `classified_by="fallback"`.
-- `backend/services/complaint_service.py` — complaint creation, retrieval, assignment, and approval queue routing. Contains `transition_complaint()` — the ONLY function allowed to update complaint status.
-- `backend/services/notification_service.py` — creates in-app notification records. Push delivery deferred to Sprint 6.
-- `backend/services/override_log_service.py` — creates override log entries. Called by `log_override_tool` — not directly from routes or tools.
-- `backend/agents/agent_complaint.py` — LangChain + Groq + Llama 3 classification agent. Returns `ClassificationResult` with confidence score. Returns `None` on failure — never raises exceptions.
-- `backend/tasks/complaint_tasks.py` — Celery task with full retry + fallback chain. `acknowledge_student_tool` called FIRST before LLM runs.
-- `backend/tools/complaint_tools.py` — all 6 Agent 1 tools with typed Pydantic input/output schemas.
-- `backend/routes/complaints.py` — thin complaint routes. Registered in `main.py`.
-- `backend/database.py` — updated with sync engine (`psycopg2`) for Celery task DB access alongside existing async engine.
-- `backend/services/user_service.py` — user verification and deactivation logic. Added post-sprint to thin out routes/users.py per CONVENTIONS.md.
+**What was built:** approval_queue_service.py, routes/approval_queue.py, approval_tasks.py, notification routes, resolution flow in complaint_service.py, serialize_complaint() helper, ComplaintReadAnonymous schema.
 
-#### ✅ Definition of Done — verified:
-- `create_admin.py` runs successfully and is idempotent ✅
-- Celery worker starts without errors ✅
-- `POST /api/complaints/` returns in under 2 seconds ✅
-- Complaint classified by LLM after ~10 seconds via Celery ✅
-- High confidence + low/medium severity → ASSIGNED ✅
-- High severity → always AWAITING_APPROVAL ✅
-- LLM failure → fallback classifier runs → AWAITING_APPROVAL ✅
-- `classified_by` set to "llm" or "fallback" on complaint record ✅
-- `transition_complaint()` rejects invalid transitions with ValueError ✅
-- Audit log written on every state change ✅
-- Injection detection flags input, stores original, processes sanitized ✅
-- Sprint 1 auth system untouched — all checks pass ✅
-- LLM classification working with `llama-3.3-70b-versatile` ✅
-- Fallback classifier runs when LLM fails ✅
-- Injection detection flags input correctly ✅
-- State machine rejects invalid transitions with HTTP 400 ✅
-- Students cannot access other students' complaints (HTTP 403) ✅
-- High severity complaints always routed to AWAITING_APPROVAL ✅
-- Celery pipeline fully tested end to end ✅
-
-#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
-
-**Deviation 1 — Windows Celery requires --pool=solo**
-- **What happened:** Windows does not support Celery's default fork-based process pool. Running without `--pool=solo` causes `PermissionError: [WinError 5]`.
-- **Fix applied:** Use `--pool=solo` flag on Windows for local development only.
-- **Rule going forward:** Always start Celery on Windows with: `.venv\Scripts\celery -A celery_app worker --pool=solo --loglevel=info`
-- **Production note:** Railway runs Linux — `--pool=solo` is NOT needed in production. Never add this flag to deployment config.
-- **Documented in:** `.env.example` comment
-
-**Deviation 2 — override_log_service.py added**
-- **What happened:** `log_override_tool` initially contained direct DB access (`db.add()`, `db.flush()`), violating CONVENTIONS.md. A new service file was created to fix this.
-- **Fix applied:** Created `backend/services/override_log_service.py` with `create_override_log()`. Tool now calls the service.
-- **Rule going forward:** All DB operations for override logs go through `override_log_service.py`.
-
-**Deviation 3 — run_async() wrapper for Celery async tools**
-- **What happened:** Celery tasks are synchronous and cannot natively call async tools. A `run_async()` helper was added to `complaint_tasks.py` to bridge this gap.
-- **Fix applied:** `run_async()` wrapper handles event loop creation for both existing and closed loops. `acknowledge_student_tool` is now called via `run_async()`.
-- **Rule going forward:** Any async tool called from a Celery task must use `run_async()`. Never create new ad-hoc sync proxy functions.
-
-**Deviation 4 — psycopg2-binary required**
-- **What happened:** Celery sync engine requires `psycopg2` driver. Was not in original requirements.
-- **Fix applied:** `psycopg2-binary` added to `requirements.txt`.
-- **Rule going forward:** Always install via `.venv\Scripts\pip install -r requirements.txt` — never use the system `pip` or conda `pip`.
-
-#### 🔧 Post-Sprint Fixes (Ultimate Verification)
-Applied after ultimate verification audit. All blocking issues resolved.
-
-**Fix 1 — Hardcoded confidence threshold removed**
-- `complaint_tasks.py` now uses `settings.COMPLAINT_CONFIDENCE_THRESHOLD` — not hardcoded `0.85`
-
-**Fix 2 — user_service.py created**
-- New file: `backend/services/user_service.py` with `verify_user()` and `deactivate_user()`
-- `routes/users.py` is now thin — delegates to user_service
-- Direct `user.is_verified` and `user.is_active` assignments removed from routes
-
-**Fix 3 — VALID_TRANSITIONS is now single source of truth**
-- Defined only in `complaint_service.py`
-- `complaint_tasks.py` imports it — no local duplicate
-
-**Fix 4 — Status normalization bypass fixed**
-- `assign_complaint()` and `send_to_approval_queue()` now use `transition_complaint()` for INTAKE→CLASSIFIED step
-- `complaint.status =` assignment exists ONLY inside `transition_complaint()`
-
-**Fix 5 — Cosmetic fixes**
-- Stale localStorage comment removed from `AuthContext.tsx`
-- `langchain-core==0.3.35` explicitly pinned in `requirements.txt`
-- Unused `useEffect` import removed from `AuthContext.tsx`
-
-**Deviation 5 — logger not defined in complaint_tasks.py**
-- **What happened:** `complaint_tasks.py` used `logger.info()` throughout but never imported or defined `logger`, causing `NameError: name 'logger' is not defined` on every task run.
-- **Fix applied:** Added at the very top of `complaint_tasks.py`:
-  ```python
-  import logging
-  logger = logging.getLogger(__name__)
-  ```
-- **Rule going forward:** Every file that uses logging must define `logger = logging.getLogger(__name__)` at module level. Never call `logger` without defining it first.
-
-**Deviation 6 — Celery cannot find /tools module (sys.path issue)**
-- **What happened:** Celery worker could not import `from tools.complaint_tools import ...` because Python's sys.path did not include the backend directory when Celery started.
-- **Fix applied:** Added to the very top of `celery_app.py` before all other imports:
-  ```python
-  import sys
-  import os
-  sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-  ```
-- **Rule going forward:** This sys.path fix must remain at the top of `celery_app.py` permanently. Never remove it. Any new Celery worker file must include the same fix.
-
-**Deviation 7 — Groq model llama3-8b-8192 decommissioned**
-- **What happened:** Groq decommissioned `llama3-8b-8192`. All LLM calls were failing with `model_decommissioned` error, causing the fallback classifier to run for every complaint.
-- **Fix applied:** Updated `GROQ_MODEL_NAME` in `.env` and `.env.example` to `llama-3.3-70b-versatile`.
-- **Rule going forward:** If LLM calls start failing with model errors, check https://console.groq.com/docs/deprecations for the latest supported model and update `GROQ_MODEL_NAME` in `.env`. Never hardcode the model name — always use `settings.GROQ_MODEL_NAME`.
-- **Current working model:** `llama-3.3-70b-versatile`
+**Key deviations:**
+- escalate route is in routes/complaints.py not routes/approval_queue.py (URL prefix reason)
+- MissingGreenlet after db.commit() → always await db.refresh(obj) before returning
+- UUID fields need field_validator mode='before' for UUID→str conversion
+- warden_override added to classifiedby enum (SQL + migration)
+- complaint_escalated, complaint_reopened added to notificationtype enum
+- WARDEN_ROLES = [assistant_warden, warden, chief_warden] — must include all three
+- reopen endpoint body field is named 'reason' not 'reopen_reason'
 
 ---
 
-### Sprint 3 — Agent 1 Complete ✅
+### SPRINT 4 — Agent 2 (Laundry) + Agent 3 (Mess) (COMPLETE ✅)
+**Goal:** Laundry slot booking with fairness algorithm, mess feedback collection and analysis, agent routing.
+
+**What was built:** agent_laundry.py, agent_mess.py, laundry_tools.py, mess_tools.py, laundry_service.py, mess_service.py, routes/laundry.py, routes/mess.py, mess_tasks.py, complaint_tasks.py updated with routing tasks.
+
+**⚠️ CRITICAL Sprint 4 deviations — MUST READ before querying these models:**
+- Machine model is named `machine.py` / `Machine` (not LaundryMachine). Columns: `repaired_at` not `last_serviced_at`
+- MessFeedback stores 5 SEPARATE columns: `food_quality`, `hygiene`, `menu_variety`, `food_quantity`, `timing` — NOT a single rating column
+- MessFeedback date column is named `date` not `feedback_date` — use `Field(alias="date")` in schema
+- MessFeedback meal field is named `meal` not `meal_type`
+- LaundrySlot uses `booking_status` (LaundrySlotStatus) not `status` (to avoid collision with legacy column)
+- LaundrySlot uses `slot_date` (date) and `slot_time` (string "09:00-10:00") not start_time/end_time
+
+---
+
+### SPRINT 5 — Push Notifications + Analytics + JWT Refresh + Laundry No-Show + Hostel Config (COMPLETE ✅)
+**Goal:** Backend production-ready with push notifications, evaluation metrics, JWT refresh, no-show penalties, hostel config in DB.
+
+**What was built:** hostel_config.py model+service+route, refresh_token.py model, push_subscription.py model, push_service.py, metrics_service.py (all 7 metrics), auth_service.py updated (refresh + rotation + theft detection), notification_service.py updated (push in notify_user), laundry_tasks.py (noshow + reminders), mess_tasks.py (daily analysis + participation check).
+
+**Key deviations:**
+- logout revokes ALL user tokens (more secure than spec)
+- override_log uses warden_id not corrected_by
+- no_show value added to laundryslostatus enum (SQL + migration)
+- RefreshToken column is `revoked` not `is_revoked`
+- 3 analytics endpoints (complaints, mess, laundry) were stubs — completed in Sprint 6
+
+---
+
+### SPRINT 6 — Backend Completions + Flow Fixes (COMPLETE ✅)
+**Goal:** Close all backend gaps before React frontend is built.
 
 **What was built:**
-- `backend/middleware/rate_limiter.py` — per-user rate limiting (5 complaints/day per student), Redis-backed, fail-open, warden roles bypass
-- `backend/services/approval_queue_service.py` — approve, override, escalate functions. All transitions go through `transition_complaint()`
-- `backend/routes/approval_queue.py` — GET /api/approval-queue/, POST approve, POST override
-- `backend/routes/complaints.py` — updated with /my, /timeline, /reopen, /escalate routes
-- `backend/routes/notifications.py` — GET /api/notifications/, PATCH /{id}/read, PATCH /read-all
-- `backend/tasks/approval_tasks.py` — `check_approval_timeouts` Celery task, auto-escalates after APPROVAL_QUEUE_TIMEOUT_MINUTES
-- `backend/celery_app.py` — updated with beat schedule (every 15 mins) and approval_tasks include
-- `backend/services/complaint_service.py` — updated with `staff_update_progress()`, `student_confirm_resolution()`, `student_reopen_complaint()`
-- `backend/schemas/complaint.py` — `ComplaintReadAnonymous` schema, UUID → str field_validator, `serialize_complaint()` helper
-- Alembic migrations: `resolved_confirmed_at`, `reopen_reason`, `is_priority` fields; `warden_override` classifiedby enum value; `complaint_escalated`, `complaint_reopened` notificationtype enum values
+- User model: is_rejected, rejection_reason, has_seen_onboarding
+- user_service.py: reject_user(), warden_reset_password(), create_staff_account()
+- auth_service.py: login intercepts rejected accounts with 403 + reason
+- login response: now includes full user object (access_token + refresh_token + user)
+- routes/users.py: /reject, /reset-password, /staff CRUD, /me, /onboarding-seen
+- metrics_service.py: all 3 analytics stubs replaced with real SQLAlchemy queries
+- DashboardMetrics: pending_registrations + pending_approval_queue counts added
 
-**Full complaint lifecycle now complete:**
-INTAKE → CLASSIFIED → AWAITING_APPROVAL → ASSIGNED → IN_PROGRESS → RESOLVED → (REOPENED → ASSIGNED)
-
-#### ✅ Definition of Done — verified:
-- Backend starts with `uvicorn main:app --reload` without errors ✅
-- Alembic migration applied successfully ✅
-- `POST /api/auth/login` rate limited ✅
-- All core files (tasks, middleware, services, routes) correctly implemented ✅
-- `logger` defined in all new python files ✅
-
-#### ⚠️ DEVIATIONS FROM ORIGINAL PLAN — respect these forever:
-
-**Deviation 1 — aioredis replaced with redis.asyncio**
-- **What happened:** `aioredis` is no longer maintained as a separate package, it was merged into `redis-py` in version 4.2.
-- **Fix applied:** Used `redis.asyncio.Redis` from the standard `redis` package for the rate limiter.
-- **Rule going forward:** Never use `aioredis` library. Use `redis.asyncio`.
-
-**Deviation 2 — Preserved transition_complaint() signature**
-- **What happened:** Algorithm suggested simplifying `transition_complaint` to just `(complaint_id, to_state, db)`.
-- **Fix applied:** Kept existing strict signature `(complaint_id, from_state, to_state, triggered_by, db, note)`.
-- **Rule going forward:** Always provide `from_state` and `triggered_by` when transitioning complaints.
-
-**Deviation 3 — Avoid JSON dicts in SQLAlchemy models if columns exist**
-- **What happened:** Algorithm suggested updating `ApprovalQueueItem` with a JSON `ai_suggestion` blob.
-- **Fix applied:** The model already correctly defined strictly typed columns `ai_suggested_category`, `ai_suggested_severity`, `ai_suggested_assignee`. Kept the columns.
-- **Rule going forward:** Prefer native PostgreSQL columns over unstructured JSON wherever possible for better schema safety.
-
-**Deviation 4 — escalate route registered in complaints.py not approval_queue.py**
-- **What happened:** The spec placed `POST /api/complaints/{id}/escalate` inside `routes/approval_queue.py`. Since the URL prefix falls under `/api/complaints/`, it was instead registered inside `routes/complaints.py` while still calling `approval_queue_service.escalate_complaint()`.
-- **Rule going forward:** The escalate route lives in `routes/complaints.py`. Do not move it.
-
-**Deviation 5 — MissingGreenlet on complaint return after commit**
-- **What happened:** After `db.commit()`, SQLAlchemy expires all ORM attributes. Any route that accessed complaint fields after a service commit triggered `MissingGreenlet: greenlet_spawn has not been called`.
-- **Fix applied:** Added `await db.refresh(complaint)` immediately after every `db.commit()` in `approval_queue_service.py`, `complaint_service.py` (resolution functions). This must be done in every service function that commits and then returns the ORM object.
-- **Rule going forward:** Every service function that calls `await db.commit()` and then returns an ORM object MUST call `await db.refresh(object)` before returning. Never return an expired ORM object.
-
-**Deviation 6 — UUID fields not coercing to str in ComplaintRead schema**
-- **What happened:** `ComplaintRead.model_validate(complaint)` failed with `Input should be a valid string` because SQLAlchemy returns UUID objects but the schema declared fields as `str`.
-- **Fix applied:** Added `@field_validator` with `mode='before'` to `ComplaintRead` and `ComplaintReadAnonymous` to convert UUID → str:
-  ```python
-  @field_validator('id', 'student_id', 'assigned_to', 'ai_suggested_assignee', mode='before')
-  @classmethod
-  def uuid_to_str(cls, v):
-      return str(v) if v is not None else None
-  ```
-- **Rule going forward:** Any Pydantic schema that validates SQLAlchemy ORM objects with UUID fields must include this validator. Never declare UUID fields as bare `str` without the validator.
-
-**Deviation 7 — warden_override missing from classifiedby enum in PostgreSQL**
-- **What happened:** The code used `classified_by = "warden_override"` but this value was never added to the `classifiedby` PostgreSQL enum during migrations.
-- **Fix applied:** 
-  1. Ran `ALTER TYPE classifiedby ADD VALUE IF NOT EXISTS 'warden_override'` in Supabase SQL Editor
-  2. Created Alembic migration `add_warden_override_to_classifiedby_enum` with `op.execute("ALTER TYPE classifiedby ADD VALUE IF NOT EXISTS 'warden_override'")`
-- **Rule going forward:** Any new enum value used in code MUST have a corresponding Alembic migration that adds it to the PostgreSQL enum. Never use an enum value in code without first verifying it exists in the DB enum.
-
-**Deviation 8 — complaint_escalated and complaint_reopened missing from notificationtype enum**
-- **What happened:** Sprint 3 added new notification types (`complaint_escalated`, `complaint_reopened`) in Python code but did not add them to the PostgreSQL `notificationtype` enum.
-- **Fix applied:** Ran `ALTER TYPE notificationtype ADD VALUE IF NOT EXISTS 'complaint_escalated'` and `ALTER TYPE notificationtype ADD VALUE IF NOT EXISTS 'complaint_reopened'` in Supabase SQL Editor. Created corresponding Alembic migrations.
-- **Rule going forward:** Same as Deviation 4 — every new NotificationType value needs an Alembic migration. Before using any enum value in code, check the DB enum first.
-
-**Deviation 9 — assistant_warden missing from WARDEN_ROLES in serialize_complaint()**
-- **What happened:** `serialize_complaint()` in `routes/complaints.py` defined `WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden]` — missing `assistant_warden`. This caused anonymous complaints to hide `student_id` even from assistant wardens.
-- **Fix applied:** Updated to `WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden, UserRole.assistant_warden]`
-- **Rule going forward:** Any role-based check that intends to cover all warden-level users must include `assistant_warden`, `warden`, AND `chief_warden`. Never assume wardens = just `warden` role.
-
-**Deviation 10 — reopen request body field named 'reason' not 'reopen_reason'**
-- **What happened:** The `POST /api/complaints/{id}/reopen` endpoint schema uses field name `reason` in the request body, not `reopen_reason` as the spec described. The DB column is `reopen_reason` but the API input field is `reason`.
-- **Rule going forward:** The reopen endpoint expects `{"reason": "..."}` in the request body.
-
-**Deviation 7 — MessFeedback date column named 'date' not 'feedback_date'**
-- DB column is `date`. `MessFeedbackRead` uses `Field(alias="date")` to map it to `feedback_date` in API responses.
-- Rule: Use `Field(alias="date")` in MessFeedbackRead. Never rename the DB column.
-
-**Deviation 8 — MessFeedback meal field named 'meal' not 'meal_type'**
-- `MessFeedbackCreate` and `MessFeedbackRead` use `meal` as the field name, not `meal_type`.
-- Rule: All mess feedback API requests and responses use `meal` not `meal_type`.
-
----
-
-### Sprint 4 — Laundry & Mess Agents (COMPLETE ✅)
-**Completed:** March 2026
-**Goal:** Implement Laundry Agent & Mess Agent routing, classification, tools, and notification integration.
-
-#### What was built:
-- Laundry Agent to extract intent (book, status, report_issue, cancel) and slot parameters from complaints.
-- Mess Agent to route severe food feedback directly to wardens and update participation stats.
-- Integrated these into `complaint_service.py` to route to correct agent based on category.
-
-#### ✅ Definition of Done — verified:
-- Laundry slot booking and cancellations work seamlessly.
-- Mess dimensions logged and actionable.
-- Human checks verified 11/11 constraints.
-
----
-
-### Sprint 5 — Push Notifications + Analytics + JWT Refresh + Laundry No-Show + Hostel Config ✅
-
-**What was built:**
-- `backend/models/hostel_config.py` — hostel-level config table, replaces hardcoded .env thresholds
-- `backend/models/refresh_token.py` — JWT refresh token storage (SHA256 hashed, never raw)
-- `backend/models/push_subscription.py` — browser push subscription storage
-- `backend/services/hostel_config_service.py` — config CRUD with in-memory cache (TTL 5 mins), falls back to .env
-- `backend/services/push_service.py` — pywebpush integration, fire-and-forget, removes 410 Gone subscriptions
-- `backend/services/metrics_service.py` — all 7 PRD evaluation metrics computed on-demand
-- `backend/services/auth_service.py` — updated with refresh token generation, rotation, theft detection
-- `backend/services/notification_service.py` — updated: notify_user() now calls push_service after every in-app notification
-- `backend/services/complaint_service.py` — updated: transition_complaint() accepts ip_address param
-- `backend/services/laundry_service.py` — updated: no-show detection, priority penalty (0.1x for 48hrs), late cancellation penalty
-- `backend/routes/hostel_config.py` — GET /api/config, PATCH /api/config
-- `backend/routes/push.py` — subscribe, unsubscribe, vapid-public-key
-- `backend/routes/analytics.py` — dashboard, complaints, mess, laundry, overrides endpoints
-- `backend/routes/auth.py` — updated: login returns refresh_token, /refresh and /logout endpoints added
-- `backend/tasks/laundry_tasks.py` — process_noshow_penalties (hourly), send_slot_reminders (every 30 mins)
-- `backend/celery_app.py` — updated with laundry beat tasks + laundry_tasks include
-- `backend/create_admin.py` — updated to seed hostel config on first run
-- `backend/schemas/hostel_config.py` — HostelConfigRead, HostelConfigUpdate
-- `backend/schemas/metrics.py` — DashboardMetrics with drift_alert flag
-
-**New Alembic migrations:**
-- hostel_config table
-- refresh_tokens table
-- push_subscriptions table
-- no_show value added to laundryslostatus enum
-- ip_address column added to audit_log table
-
-### Sprint 5 Deviations
-
-**Deviation 1 — Detailed analytics endpoints return stubs (deferred to Sprint 6)**
-- `GET /api/analytics/complaints`, `GET /api/analytics/mess`, `GET /api/analytics/laundry` return stub responses.
-- `GET /api/analytics/dashboard` and `GET /api/analytics/overrides` are fully implemented.
-- Full detailed analytics will be completed alongside the warden dashboard in Sprint 6.
-- Rule: Do not implement these endpoints until Sprint 6 frontend work begins.
-
-**Deviation 2 — POST /api/auth/logout revokes ALL user tokens not just current session**
-- More secure than spec (which said "revoke current token only").
-- Intentional — invalidates all sessions on logout.
-- Rule: This is the accepted behavior. Do not change to single-token revocation.
-
-**Deviation 3 — override_log uses warden_id not corrected_by**
-- `OverrideLog` model field is `warden_id` not `corrected_by`.
-- All analytics queries use `warden_id`. Never use `corrected_by`.
-- Rule: Always use `warden_id` when referencing who performed the override.
-
-**Deviation 4 — no_show enum value missing from PostgreSQL on first deploy**
-- `laundryslostatus` enum did not have `no_show` until Alembic migration `8d59bc56aa84` was run.
-- Migration `8d59bc56aa84_add_no_show_to_laundryslostatus_enum.py` added it.
-- Rule: Always run `alembic upgrade head` after pulling new code.
-
----
-
-### Sprint 6 — Backend Completions + Flow Fixes ✅
-
-**What was built:**
-- `backend/models/user.py` — updated with is_rejected, rejection_reason, has_seen_onboarding fields
-- `backend/services/user_service.py` — reject_user(), warden_reset_password(), create_staff_account()
-- `backend/services/auth_service.py` — login_user() intercepts rejected accounts with 403 + reason
-- `backend/services/metrics_service.py` — all 3 analytics stubs replaced with real SQLAlchemy queries
-- `backend/routes/users.py` — POST /api/users/{id}/reject, PATCH /api/users/{id}/reset-password, POST /api/staff, GET /api/staff, GET /api/users/me, PATCH /api/users/me/onboarding-seen
-- `backend/routes/auth.py` — login response updated to include full user object
-- `backend/routes/analytics.py` — complaints, mess, laundry endpoints return real data
-- `backend/schemas/user.py` — StaffCreate, StaffRead schemas added, UserRead updated with new fields
-- `backend/schemas/metrics.py` — DashboardMetrics expanded with pending_registrations, pending_approval_queue
-
-**New Alembic migrations:**
-- Sprint 6 user fields: is_rejected, rejection_reason, has_seen_onboarding (server_default=false)
-- Notification type enum values: registration_approved, registration_rejected, password_reset, account_deactivated
-
-**All backend gaps closed. Backend is now feature-complete for Sprint 7 (React PWA).**
-
-### Sprint 6 Deviations
-
-**Deviation 1 — PATCH /api/users/me/onboarding-seen returns full UserRead not minimal response**
-- Spec requested returning `{ "has_seen_onboarding": true }` only.
-- Implementation returns full UserRead schema (consistent with all other user routes).
-- Frontend gets the full updated user state in one call — no extra fetch needed.
-- Rule: Use the full UserRead response from this endpoint. Do not change to a minimal response.
-
-**Deviation 2 — Analytics field names match actual Sprint 4 model columns**
-- metrics_service.py initially used wrong field names (taste_score, hygiene_score, etc.)
-- Fixed to use actual MessFeedback column names: food_quality, hygiene, menu_variety, food_quantity, timing
-- complaints analytics fixed to handle NULL category/severity on INTAKE complaints
-- password reset fixed: refresh token column is `revoked` not `is_revoked`
-- Rule: Always check PROJECT_STATE.md Sprint 4 deviations before writing queries against mess/laundry models
+**Key deviations:**
+- PATCH /api/users/me/onboarding-seen returns full UserRead not `{ has_seen_onboarding: true }`
+- analytics queries initially used wrong field names (taste_score etc.) → fixed to actual columns
+- complaint analytics initially crashed on NULL category/severity → added None checks
+- password reset initially used is_revoked → fixed to revoked
 
 ---
 
 ## SECTION 6 — ENVIRONMENT VARIABLES
 
-All variables live in `/backend/.env` (not committed). `/backend/.env.example` is committed with all names but no values.
-**Note:** `.env.example` lives at `backend/.env.example` (NOT project root — see Deviation 2 from Sprint 1).
-The file includes a comment about Windows Celery: use `--pool=solo` flag locally.
-
 ```env
-# Database — ALWAYS port 5432, never 6543 (see Deviation 2 above)
+# Database — ALWAYS port 5432, never 6543
 DATABASE_URL=postgresql+asyncpg://postgres.PROJECT_REF:PASSWORD@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres
 
 # Auth
-JWT_SECRET=<long random string>
+JWT_SECRET=<long-random-string>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_HOURS=24
 REFRESH_TOKEN_EXPIRE_DAYS=30
 
-# LLM — free tier, open-source model
-# IMPORTANT: llama3-8b-8192 was decommissioned by Groq in March 2026
-# Current working model as of Sprint 2 completion:
+# LLM — llama3-8b-8192 was DECOMMISSIONED March 2026
 GROQ_API_KEY=<from console.groq.com>
 GROQ_MODEL_NAME=llama-3.3-70b-versatile
 
-# Task Queue — Upstash Redis (filled in Sprint 2)
-CELERY_BROKER_URL=redis://default:PASSWORD@HOST:PORT
-CELERY_RESULT_BACKEND=redis://default:PASSWORD@HOST:PORT
+# Task Queue
+CELERY_BROKER_URL=<from Upstash dashboard>
+CELERY_RESULT_BACKEND=<same as broker>
 
-# Push Notifications (Sprint 5)
-VAPID_PRIVATE_KEY=
-VAPID_PUBLIC_KEY=
+# Push Notifications
+VAPID_PRIVATE_KEY=<generate with pywebpush>
+VAPID_PUBLIC_KEY=<generate with pywebpush>
 VAPID_CLAIM_EMAIL=admin@hostelops.ai
 
-# Agent Thresholds
+# Complaint Agent
 COMPLAINT_CONFIDENCE_THRESHOLD=0.85
-MESS_DISSATISFACTION_THRESHOLD=2.5
-MESS_SPIKE_DELTA=1.5
+
+# Mess Thresholds (also in hostel_config table — DB takes precedence)
+MESS_ALERT_THRESHOLD=2.5
+MESS_CRITICAL_THRESHOLD=2.0
+MESS_MIN_PARTICIPATION=0.15
+MESS_MIN_RESPONSES=5
+
+# Laundry (also in hostel_config table — DB takes precedence)
+LAUNDRY_SLOTS_START_HOUR=8
+LAUNDRY_SLOTS_END_HOUR=22
+LAUNDRY_SLOT_DURATION_HOURS=1
 LAUNDRY_NOSHOW_PENALTY_HOURS=48
-LAUNDRY_UNAVAILABILITY_DAYS=4
-APPROVAL_QUEUE_TIMEOUT_MINUTES=30
-
-# CORS
-ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-
-# Sprint 5: Hostel Identity (fallback if no DB row in hostel_config)
-HOSTEL_NAME=HostelOps AI
-HOSTEL_MODE=college
-TOTAL_FLOORS=3
-TOTAL_STUDENTS_CAPACITY=200
-COMPLAINT_RATE_LIMIT_DAILY=5
 LAUNDRY_CANCELLATION_DEADLINE_MINUTES=15
+
+# Approval Queue (also in hostel_config table)
+APPROVAL_QUEUE_TIMEOUT_MINUTES=30
 ```
 
 ---
 
 ## SECTION 7 — KEY DECISIONS LOG
 
-Every significant architectural or technical decision made during this project is logged here. Any AI must understand these before suggesting changes.
-
-| Decision | What was decided | Why | When |
-|----------|-----------------|-----|------|
-| Supervisor Pattern | Agent 1 is the single orchestrator. All complaints enter through Agent 1 only. | Consistent triage, logging, and routing. Nothing bypasses the orchestrator. | Pre-Sprint 1 |
-| LangChain over CrewAI | Using LangChain, not CrewAI | Agents don't collaborate in parallel — they have separate domains. CrewAI solves a collaboration problem we don't have. LangChain has more training data for AI coding tools. | Pre-Sprint 1 |
-| LangChain over LangGraph (V1) | Using LangChain for V1, LangGraph documented as V2 | LangGraph has steeper learning curve. LangChain is sufficient for V1 volume. LangGraph migration is data-model-compatible. | Pre-Sprint 1 |
-| Groq + Llama 3 over self-hosted LLM | Using Groq free tier | Self-hosting requires hardware and DevOps knowledge we don't have. Groq is free, fast, and uses an open-source model. | Pre-Sprint 1 |
-| Three agents in V1 | All three agents ship in V1 | The three-agent system is the core value proposition. A standalone complaint classifier is not compelling. Laundry and mess agents are not complex enough to justify cutting. | Pre-Sprint 1 |
-| PWA over native app | Using React PWA | No app store, no cost, works on all devices, supports push notifications. | Pre-Sprint 1 |
-| Neon/Supabase PostgreSQL | Free hosted PostgreSQL | Zero DevOps setup. Free tier. Standard PostgreSQL — fully compatible with all libraries. | Pre-Sprint 1 |
-| passlib removed | Using bcrypt directly | passlib is unmaintained and incompatible with modern bcrypt package. | Sprint 1 |
-| Port 5432 for Supabase | Direct connection not pooler | pgBouncer pooler on 6543 conflicts with asyncpg prepared statement caching. | Sprint 1 |
-| create_admin.py for bootstrap | One-time script for first admin | Debug scripts must not exist in production codebase. The first admin needs a clean, repeatable setup process. | Sprint 1 review |
-| run_async() pattern | All async tools called from Celery tasks must use the `run_async()` wrapper in `complaint_tasks.py` | Celery is synchronous — cannot natively call async code | Sprint 2 |
-| override_log_service.py | Override log DB operations go through `override_log_service.py` exclusively | Tools must never access DB directly per CONVENTIONS.md | Sprint 2 |
-| psycopg2 for Celery | Celery sync engine uses `psycopg2` driver, async engine uses `asyncpg` | Celery cannot use asyncpg — incompatible with sync context | Sprint 2 |
-| Windows --pool=solo | Required for Celery on Windows dev environment only | Windows doesn't support fork-based process pool | Sprint 2 |
-| user_service.py | All user management logic (verify, deactivate) lives in `user_service.py` | Routes must never contain business logic per CONVENTIONS.md | Ultimate Verification |
-| sys.path fix in celery_app.py | `sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))` at top of `celery_app.py` | Celery worker starts from a different working directory and cannot find backend modules without this | Human checks phase |
-| logging pattern | Every file using `logger` must define `logger = logging.getLogger(__name__)` at module level | Prevents NameError at runtime — learned from complaint_tasks.py failure | Human checks phase |
-| Groq model versioning | `GROQ_MODEL_NAME` in `.env` controls the model — never hardcoded | Groq decommissions models without much notice — must be configurable | Human checks phase |
-
-### Hostel Onboarding & Configuration (Planned for Sprint 6 — Frontend)
-
-When a new hostel deploys HostelOps AI, wardens need a one-time setup wizard to configure:
-
-1. **Hostel profile** — name, address, number of floors, hostel mode (college/autonomous)
-2. **Infrastructure setup** — auto-generate laundry machines based on floors (e.g. 1 machine per floor), with ability to add/remove/rename from settings panel
-3. **Operational thresholds** — mess alert threshold, approval queue timeout, complaint rate limit, laundry slot hours — currently in .env, should be configurable from warden dashboard UI
-4. **Student capacity** — total active students (used for participation rate calculation)
-
-**Backend support:** All of this is already possible via existing API endpoints and settings. What is missing:
-- A `hostel_config` table for per-hostel settings (replaces hardcoded .env values)
-- Config CRUD endpoints for wardens
-- Setup wizard in React PWA (Sprint 6)
-- `POST /api/laundry/setup` bulk machine creation endpoint
-
-**Design decision pending:** Single-tenant (one hostel per deployment) vs multi-tenant (multiple hostels on one instance). V1 is single-tenant.
+| Decision | What | Why | Sprint |
+|----------|------|-----|--------|
+| Supervisor pattern | Agent 1 is single orchestrator | Consistent triage | Planning |
+| LangChain not CrewAI | Agents have separate domains | No parallel collaboration needed | Planning |
+| Groq + Llama 3 | Free tier LLM | Zero cost constraint | Planning |
+| passlib removed | bcrypt direct | passlib unmaintained | Sprint 1 |
+| Port 5432 | Direct Supabase connection | pgBouncer conflicts asyncpg | Sprint 1 |
+| run_async() wrapper | Bridge async tools in Celery | Celery is synchronous | Sprint 2 |
+| VALID_TRANSITIONS single source | complaint_service.py only | Prevent drift | Sprint 2 |
+| psycopg2 for Celery | Sync engine | asyncpg incompatible with sync | Sprint 2 |
+| Windows --pool=solo | Dev only | Windows no fork pool | Sprint 2 |
+| WARDEN_ROLES = 3 roles | assistant_warden + warden + chief_warden | assistant_warden is the primary operative | Sprint 3 |
+| db.refresh() after commit | Always refresh before return | Prevent MissingGreenlet errors | Sprint 3 |
+| UUID→str field_validator | mode='before' on all schemas | SQLAlchemy returns UUID objects | Sprint 3 |
+| Machine model not LaundryMachine | Existing model reused | Sprint 1 already created it | Sprint 4 |
+| MessFeedback 5 columns | food_quality, hygiene, etc. | More granular than single rating | Sprint 4 |
+| booking_status not status | New column to avoid collision | Legacy status column existed | Sprint 4 |
+| hostel_config in DB | Not hardcoded in .env | Wardens need to configure from UI | Sprint 5 |
+| Refresh token rotation | Old token revoked on use | Theft detection | Sprint 5 |
+| notify_user() unified | Push inside with try/except | Single notification function | Sprint 5 |
+| 30-second polling | Not WebSockets | Sufficient for V1, lower complexity | Decision |
+| Multi-tenant architecture | hostel_id on all tables | One deployment serves all hostels | Sprint 7 |
+| Hostel code registration | Student enters code from warden | Clean UX, no subdomain complexity | Sprint 7 |
+| Mess menu flexible | valid_from date, publish anytime | Hostels don't follow weekly schedules | Sprint 7b |
+| Notice board | Warden → all students | Replace WhatsApp group announcements | Sprint 7b |
+| Complaint templates | Quick pre-fill | Most complaints are repetitive | Sprint 7b |
+| Feedback streak | Counter on User model | Incentivises daily participation | Sprint 7b |
+| ERP upload deferred | Manual warden approval V1 | Complexity vs benefit | V2 |
+| Laundry priority exception deferred | Fairness score sufficient V1 | Complexity vs benefit | V2 |
+| RAG deferred | No external DB in V1 | Zero dependency constraint | V2 |
 
 ---
 
-## SECTION 8 — VERIFICATION CHECKLIST (FOR OPUS OR ANY REVIEWER AI)
+## SECTION 8 — VERIFICATION HISTORY
 
-If you are reading this to verify the current state of the project, check every item below against the actual codebase. Report exactly: ✅ PASS, ❌ FAIL, or ⚠️ DEVIATION (with explanation).
+### Sprint 1+2 Human Checks — 9/9 PASS (March 5, 2026)
+git log .env, 10 tables in DB, JWT role claim, Celery starts, injection detection, invalid transition rejected, cross-student access blocked, high severity routing, fallback classifier.
 
-### Sprint 6 Verification (COMPLETE ✅)
+### Sprint 3 — 9/9 PASS (March 13, 2026)
+Approval flow, override flow, rate limiting, resolution flow, anonymous complaints, timeline, my complaints, notifications, Celery beat.
 
-**Code Audit — Gemini 3.1 Pro**
-- Result: PASS — 63 items passed, 0 failures, 1 acceptable deviation
-- All golden rules confirmed: logger, db.refresh, UUID validators, no passlib, VALID_TRANSITIONS
+### Sprint 4 — 11/11 PASS (March 16, 2026)
+Machines seeded, available slots, book slot, one slot per day, my bookings, machine status, submit feedback, duplicate blocked, mess summary, laundry routing, mess routing.
 
-**Manual Checks — 9/9 PASS (March 20, 2026)**
+### Sprint 5 — 9/12 (March 17, 2026)
+PASS: hostel config, JWT refresh, token rotation, logout, VAPID key, push subscribe, dashboard metrics, override analytics, Celery beat.
+PARTIAL (stubs — fixed in Sprint 6): complaints analytics, mess analytics, laundry analytics.
 
-| Check | Result | Notes |
-|-------|--------|-------|
-| Login has full user object | ✅ PASS | access_token + refresh_token + user with all fields |
-| GET /api/users/me | ✅ PASS | Full profile returned for all roles |
-| Reject registration | ✅ PASS | is_rejected=true, reason stored |
-| Rejected login blocked | ✅ PASS | HTTP 403 with rejection reason |
-| Create staff account | ✅ PASS | Immediately verified + active |
-| Onboarding flag | ✅ PASS | PATCH sets has_seen_onboarding=true |
-| Dashboard pending counts | ✅ PASS | pending_registrations=1, pending_approval_queue=8 |
-| Analytics real data | ✅ PASS | All 3 stubs replaced with real queries |
-| Password reset | ✅ PASS | Old password rejected, new password works |
+### Sprint 6 — 9/9 PASS (March 20, 2026)
+Login has user object, GET /users/me, reject registration, rejected login blocked, create staff account, onboarding flag, dashboard pending counts, analytics real data, password reset.
 
-Issues found and fixed during manual checks:
-1. `get_complaints_analytics()` crashed on NULL category/severity → added None checks
-2. `get_mess_analytics()` used wrong field names (taste_score etc.) → fixed to actual column names
-3. `warden_reset_password()` used `is_revoked` → fixed to `revoked` (actual column name)
-
-### Sprint 5 Verification (COMPLETE ✅)
-
-**Code Audit — Gemini 3.1 Pro**
-- First audit: FAIL — 3 failures
-- Fixes applied: hostel config seeding, push in notify_user, audit log IP
-- Re-verification: PASS — 0 failures, 1 acceptable warning (logout revokes all tokens)
-
-**Manual Checks — 9/12 PASS, 3 PARTIAL (March 17, 2026)**
-
-| Check | Result | Notes |
-|-------|--------|-------|
-| Hostel config GET + PATCH | ✅ PASS | All fields, update works |
-| JWT refresh token | ✅ PASS | Login returns both tokens |
-| Token rotation | ✅ PASS | Revoked token reuse detected, all sessions invalidated |
-| Logout | ✅ PASS | HTTP 200, tokens_revoked: 1 |
-| VAPID public key | ✅ PASS | Key returned without auth |
-| Push subscribe | ✅ PASS | Subscription saved |
-| Dashboard metrics | ✅ PASS | All 7 metrics + drift_alert |
-| Complaints analytics | ✅ FIXED in Sprint 6 | Real data with category/status/severity breakdown |
-| Mess analytics | ✅ FIXED in Sprint 6 | Per-dimension averages + daily participation |
-| Laundry analytics | ✅ FIXED in Sprint 6 | Bookings, noshow rate, cancellations |
-| Override analytics | ✅ PASS | 1 override returned from Sprint 3 tests |
-| Celery beat tasks | ✅ PASS | Beat running, check-approval-timeouts fired |
-
-Issues found and fixed during manual checks:
-1. `no_show` missing from laundryslostatus PostgreSQL enum → added via SQL + migration
-2. Override analytics used `corrected_by` instead of `warden_id` → fixed in analytics route
-
-### Sprint 4 Verification (COMPLETE ✅)
-
-**Code Audit — Gemini 3.1 Pro**
-- Result: PASS — 38 items passed, 0 failures, 6 acceptable deviations
-- All golden rules confirmed: logger, db.refresh, UUID validators, WARDEN_ROLES, enum migrations
-
-**Manual Checks — 11/11 PASS (March 16, 2026)**
-
-| Check | Result | Notes |
-|-------|--------|-------|
-| Machines seeded | ✅ PASS | 3 machines created (A/B/C, floors 1-3) |
-| Available slots | ✅ PASS | 42 slots generated (14 per machine × 3), 08:00-22:00 |
-| Book a slot | ✅ PASS | HTTP 200, booking confirmation returned |
-| One slot per day | ✅ PASS | HTTP 400 on second booking same date |
-| My bookings | ✅ PASS | Booked slot visible, priority_score=1.0 |
-| Machine status update | ✅ PASS | under_repair blocks new bookings (HTTP 400) |
-| Submit mess feedback | ✅ PASS | 5-dimension feedback accepted |
-| Duplicate feedback blocked | ✅ PASS | HTTP 409 on duplicate meal/date |
-| Mess summary | ✅ PASS | avg per dimension + overall_avg + trend returned |
-| Laundry complaint routing | ✅ PASS | category=laundry → route_to_laundry_agent fired |
-| Mess complaint routing | ✅ PASS | category=mess → route_to_mess_agent fired (retried once on Windows, succeeded) |
-
-Issues found and fixed during manual checks:
-1. MessFeedback `meal_type` field named `meal` in schema → documented as deviation
-2. MessFeedbackRead `feedback_date` field uses `Field(alias="date")` to map DB column → fixed
-3. `Event loop is closed` warning on route_to_mess_agent first attempt on Windows → non-fatal, retries and succeeds, will not occur on Linux/Railway
-
-### Sprint 1 Verification
-
-**Re-verification:** PASS — 4/4 failures fixed, 2/2 deviations resolved, 0 regressions
-
-**Structure:**
-- [ ] `/backend/config.py` exists and uses `BASE_DIR = Path(__file__).resolve().parent` for absolute .env path
-- [ ] `/backend/database.py` exists with async SQLAlchemy engine
-- [ ] `/backend/schemas/enums.py` exists with all enums defined
-- [ ] All 9 schema files exist in `/backend/schemas/`
-- [ ] All 10 model files exist in `/backend/models/`
-- [ ] `/backend/services/auth_service.py` uses bcrypt directly — NOT passlib
-- [ ] `/backend/routes/auth.py` has register and login endpoints
-- [ ] `/backend/routes/users.py` has verify and deactivate endpoints
-- [ ] `/backend/.env.example` is committed with all variable names
-- [ ] `/backend/.env` is NOT committed (check .gitignore)
-- [ ] `verify_warden.py` does NOT exist anywhere in the codebase
-- [ ] All 10 tables exist in the Supabase database
-
-**Code quality:**
-- [ ] No hardcoded values anywhere — all config comes from `settings` imported from `config.py`
-- [ ] No direct `os.environ` access outside `config.py`
-- [ ] No passlib imports anywhere
-- [ ] All route handlers use `async def`
-- [ ] All DB calls use `AsyncSession`
-
-**Frontend:**
-- [ ] `/frontend/src/types/` has TypeScript types for user, complaint, laundry, mess
-- [ ] `/frontend/src/api/authApi.ts` exists
-- [ ] `/frontend/src/context/AuthContext.tsx` exists
-- [ ] `/frontend/src/pages/Login.tsx` exists
-- [ ] All 6 page placeholders exist
-
-**Functional:**
-- [ ] Backend starts without errors
-- [ ] Swagger UI loads at `http://localhost:8000/docs`
-- [ ] Register endpoint creates user with `is_verified=False`
-- [ ] Login returns 401 for unverified user
-- [ ] Verify endpoint activates account
-- [ ] Login returns JWT with role claim after verification
-- [ ] Protected route returns 403 with wrong role token
-- [ ] Frontend starts without errors
-
-### Sprint 2 Verification — COMPLETE ✅
-Re-verification audit passed: 1/1 failures fixed, 1/1 deviations resolved, 0 regressions.
-
-Key items confirmed:
-- All 6 Agent 1 tools exist with typed Pydantic signatures
-- `transition_complaint()` enforces valid state transitions
-- LLM classification runs async via Celery — never blocks HTTP response
-- Fallback classifier runs on LLM failure
-- No direct DB access in any tool file
-- `acknowledge_student_tool` called via `run_async()` wrapper
-
-### Human Checks — Sprint 1 + Sprint 2 Combined (COMPLETE ✅)
-All 9 human checks passed on March 5, 2026.
-
-| Check | Result | Notes |
-|-------|--------|-------|
-| git log — .env never committed | ✅ PASS | No .env in git history |
-| All 10 tables in database | ✅ PASS | All tables confirmed in Supabase |
-| JWT contains role claim | ✅ PASS | Payload: sub, role, exp, type |
-| Celery starts cleanly | ✅ PASS | Connected to Upstash Redis, ready |
-| Injection detection | ✅ PASS | flagged_input populated, [removed] in sanitized_text |
-| Invalid state transition rejected | ✅ PASS | HTTP 400 with allowed transitions listed |
-| Cross-student access blocked | ✅ PASS | HTTP 403 for unauthorized access |
-| High severity routing | ✅ PASS | interpersonal/high → AWAITING_APPROVAL |
-| Fallback classifier | ✅ PASS | classified_by=fallback, category=laundry |
-
-Issues found and fixed during human checks:
-1. `logger` not defined in `complaint_tasks.py` → fixed with `logging.getLogger(__name__)`
-2. Celery sys.path not including backend → fixed with sys.path.insert in `celery_app.py`
-3. Groq model `llama3-8b-8192` decommissioned → updated to `llama-3.3-70b-versatile`
-
-### Sprint 3 Verification (COMPLETE ✅)
-
-**Code Audit — Gemini 3.1 Pro**
-- First audit: PARTIAL — 3 failures
-- Fixes applied: rate limit message, override logging, ComplaintReadAnonymous wiring
-- Re-verification: PASS — 0 failures, 1 deviation confirmed acceptable
-
-**Manual Checks — 9/9 PASS (March 13, 2026)**
-
-| Check | Result | Notes |
-|-------|--------|-------|
-| Approval flow | ✅ PASS | AWAITING_APPROVAL → ASSIGNED via warden approve |
-| Override flow | ✅ PASS | AI overridden, override_logs row created |
-| Rate limiting | ✅ PASS | HTTP 429 on 6th complaint, correct message |
-| Resolution flow | ✅ PASS | ASSIGNED → IN_PROGRESS → RESOLVED → REOPENED |
-| Anonymous complaints | ✅ PASS | After WARDEN_ROLES fix applied |
-| Timeline | ✅ PASS | Full audit trail from INTAKE to REOPENED |
-| My complaints | ✅ PASS | 14 complaints, all Student 1's, newest first |
-| Notifications | ✅ PASS | 15 notifications, mark-as-read working |
-| Celery beat | ✅ PASS | Beat scheduler started, tasks scheduled |
-
-Issues found and fixed during manual checks:
-1. MissingGreenlet after db.commit() → fixed with db.refresh(complaint)
-2. UUID → str coercion in ComplaintRead → fixed with field_validator
-3. warden_override missing from classifiedby enum → added via SQL + migration
-4. complaint_escalated, complaint_reopened missing from notificationtype enum → added via SQL + migration
-5. assistant_warden missing from WARDEN_ROLES → fixed in serialize_complaint()
+Issues found and fixed in Sprint 6 manual checks:
+1. complaints analytics crashed on NULL category → added None checks
+2. mess analytics used wrong field names (taste_score) → fixed to food_quality etc.
+3. password reset used is_revoked → fixed to revoked
 
 ---
 
-## SECTION 9 — HOW TO USE THIS DOCUMENT
+## SECTION 9 — CURRENT STATE & NEXT STEPS
 
-### Starting a new session with any AI:
+```
+Current sprint: Sprint 7 — Multi-tenant Architecture
+Sprint 1: ✅ Foundation + Auth
+Sprint 2: ✅ Agent 1 + Celery Pipeline
+Sprint 3: ✅ Agent 1 Complete (approval queue, resolution flow)
+Sprint 4: ✅ Agent 2 (Laundry) + Agent 3 (Mess)
+Sprint 5: ✅ Push Notifications + Analytics + JWT Refresh + Hostel Config
+Sprint 6: ✅ Backend Completions + Flow Fixes — backend feature-complete
+Sprint 7: 🔄 Multi-tenant (hostel_id + hostel codes) — STARTING NOW
+Sprint 7b: ⏳ API Polish + Mess Menu + Notice Board + Templates + Streak
+Sprint F: ⏳ React PWA Frontend (after Sprint 7b complete)
+Sprint D: ⏳ Docker + Railway deployment (after Sprint F)
+```
+
+### When starting a new session with any AI:
 
 ```
 Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 7 — React PWA Frontend
-Sprint 1: ✅ Complete and verified
-Sprint 2: ✅ Complete, verified, human-checked (9/9)
-Sprint 3: ✅ Complete, verified, human-checked (9/9)
-Sprint 4: ✅ Complete, verified, human-checked (11/11)
-Sprint 5: ✅ Complete, verified, human-checked (9/12 full, 3 stubs)
-Sprint 6: ✅ Complete, verified, human-checked (9/9) — backend feature-complete
-Sprint 7: 🔄 React PWA Frontend (starting next)
-Sprint 8: ⏳ UI/UX Polish (after Stitch designs ready)
+Current sprint: Sprint 7 — Multi-tenant Architecture
+
 Your task: [DESCRIBE TASK]
 ```
 
 ### After completing a sprint:
-
-Update this document:
-1. Mark the sprint as COMPLETE ✅ in Section 5
-2. Fill in the Definition of Done results
-3. Add any new deviations to the Deviations subsection
-4. Add any new decisions to Section 7
-5. Update the environment variables in Section 6 if anything changed
-6. **Add the NEXT sprint section only after the current one is fully complete and committed** — never document future sprints in advance
-7. Commit: `git commit -m "Update PROJECT_STATE.md — Sprint X complete"`
-
-### If switching AI models mid-sprint:
-
-Paste this entire document into the new AI and say:
-*"Read PROJECT_STATE.md. We are mid-Sprint [X]. The following tasks are complete: [list]. Continue from: [next task]. Do not change anything that is already working."*
+1. Mark the sprint COMPLETE ✅ in Section 5
+2. Add deviations discovered
+3. Add decisions to Section 7
+4. Update environment variables in Section 6 if changed
+5. Update Section 9 current state
+6. Commit: `git commit -m "Update PROJECT_STATE.md — Sprint X complete"`
 
 ---
 
 ## SECTION 10 — GOLDEN RULES (NEVER VIOLATE)
 
-1. **Never change working code** just because you would do it differently. If it works and passes the Definition of Done, leave it alone.
-2. **Never use passlib** anywhere in this project. Use `hash_password()` and `verify_password()` from `auth_service.py`.
+1. **Never change working code** just because you would do it differently.
+2. **Never use passlib.** Use `hash_password()` and `verify_password()` from `auth_service.py`.
 3. **Never change DATABASE_URL port to 6543.** Always 5432.
 4. **Never put logic in routes.** Routes call services. Services contain logic.
 5. **Never call the LLM directly from a route or service.** All LLM calls go through `/agents/`.
 6. **Never run slow operations synchronously.** Everything slow goes through Celery tasks.
-7. **Never hardcode any value** that should come from `.env`.
+7. **Never hardcode any config value.** Read from `config.py` → `settings.*`.
 8. **Never commit `.env`** under any circumstances.
 9. **Always update PROJECT_STATE.md** at the end of every sprint before starting the next.
 10. **Always reference PRD.md and CONVENTIONS.md** before writing any new code.
-11. **VALID_TRANSITIONS is defined only in `complaint_service.py`.** Any other file that needs to check valid transitions must import from there — never redefine it locally.
-12. **Always define `logger = logging.getLogger(__name__)` at module level** in any file that uses logging. Never call `logger` without defining it.
-13. **Never remove the sys.path fix from `celery_app.py`**. It is required for Celery to find backend modules.
-14. **Never hardcode the Groq model name**. Always use `settings.GROQ_MODEL_NAME`. If a model is decommissioned, update `.env` only.
-15. **Always restore GROQ_API_KEY after fallback testing**. Testing with an invalid key is done in `.env` only — restart both servers after restoring.
-16. **Always call `await db.refresh(obj)` after `await db.commit()`** when the ORM object will be returned or accessed afterward. Never return an expired SQLAlchemy object.
-17. **Always add UUID → str field_validator to Pydantic schemas** that validate SQLAlchemy ORM objects with UUID primary keys or foreign keys.
-18. **Any new enum value used in Python code MUST have an Alembic migration** that adds it to the PostgreSQL enum. Check the DB enum before using any new value.
-19. **WARDEN_ROLES must always include assistant_warden, warden, AND chief_warden** — never assume warden-level access means just `warden` role.
-20. **Event loop is closed warning in Celery on Windows is non-fatal.** The `route_to_laundry_agent` and `route_to_mess_agent` tasks may show this warning on first attempt in `--pool=solo` dev mode on Windows. They retry automatically and succeed. Do not add workarounds — this does not occur on Linux/Railway production.
-21. **Never store raw refresh tokens** — always store SHA256 hash in DB. Raw token sent to client only once at login/refresh.
-22. **notify_user() is the single notification function** — never create separate push/in-app variants. Push is always called inside notify_user() with try/except, never separately.
-23. **Always run `alembic upgrade head` after pulling new code** — new migrations may have been added. Missing migrations cause 500 errors on first use of new enum values.
-24. **Analytics stub endpoints are intentional** — GET /api/analytics/complaints, /mess, /laundry return stubs until Sprint 6. Do not implement them before frontend work begins.
-25. **Always check Sprint 4 deviations before querying mess/laundry models.** MessFeedback uses food_quality, hygiene, menu_variety, food_quantity, timing — NOT taste_score or similar. RefreshToken uses `revoked` not `is_revoked`.
-26. **Analytics queries must handle NULL enum fields.** Complaints in INTAKE state have NULL category and severity. Always check `if field is not None` before calling `.value` on enum fields.
+11. **VALID_TRANSITIONS defined only in `complaint_service.py`.** Import it, never redefine.
+12. **Always define `logger = logging.getLogger(__name__)` at module level** in every file that uses logging.
+13. **Never remove the sys.path fix from `celery_app.py`.**
+14. **Never hardcode the Groq model name.** Use `settings.GROQ_MODEL_NAME`.
+15. **Always restore GROQ_API_KEY after fallback testing.**
+16. **Always call `await db.refresh(obj)` after `await db.commit()`** when returning the ORM object.
+17. **Always add UUID → str field_validator** to Pydantic schemas validating SQLAlchemy ORM objects.
+18. **Every new PostgreSQL enum value needs an Alembic migration** before it is used in code.
+19. **WARDEN_ROLES always = [assistant_warden, warden, chief_warden]** — never just `warden`.
+20. **Event loop closed warning in Celery on Windows is non-fatal.** Retry succeeds. No workarounds.
+21. **Never store raw refresh tokens.** Always store SHA256 hash. Raw token sent to client once only.
+22. **notify_user() is the single notification function.** Push called inside with try/except always.
+23. **Always run `alembic upgrade head` after pulling new code.**
+24. **Analytics queries must handle NULL enum fields.** Check `if field is not None` before `.value`.
+25. **Check Sprint 4 deviations before querying mess/laundry models.** MessFeedback columns: food_quality, hygiene, menu_variety, food_quantity, timing. Machine: repaired_at. RefreshToken: revoked (not is_revoked). LaundrySlot: booking_status (not status).
+26. **Notification polling is 30 seconds in Sprint F.** Do not implement WebSockets in V1.
+27. **Every FastAPI route must have an explicit `response_model=` decorator.**
+28. **All list endpoints must support `limit` and `offset` pagination params** (Sprint 7b).
+29. **All datetime fields in API responses must include timezone info** (`Z` or `+00:00`) (Sprint 7b).
+30. **Complaint text minimum 10 characters.** Enforce in schema and backend (Sprint 7b).
+31. **After Sprint 7: every query must filter by hostel_id.** Data isolation is mandatory. A user from hostel A must never see hostel B's data.
 
 ---
 
-## SECTION 11 — OUTPUT FILES
+## SECTION 11 — V2 DEFERRALS (DO NOT IMPLEMENT IN V1)
 
-**Sprint 4:**
-- /mnt/user-data/outputs/SPRINT_4_PROMPT.md
-- /mnt/user-data/outputs/SPRINT_4_VERIFICATION.md
-- /mnt/user-data/outputs/SPRINT_4_MANUAL_CHECKS.md
-- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT4.md
+These were explicitly decided as V2 scope. Do not implement them unless explicitly instructed:
 
-**Sprint 5:**
-- /mnt/user-data/outputs/SPRINT_5_PROMPT.md
-- /mnt/user-data/outputs/SPRINT_5_VERIFICATION.md
-- /mnt/user-data/outputs/SPRINT_5_REVERIFICATION.md
-- /mnt/user-data/outputs/SPRINT_5_FIXES.md
-- /mnt/user-data/outputs/SPRINT_5_MANUAL_CHECKS.md
-- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT5.md
-
-**Sprint 6:**
-- /mnt/user-data/outputs/SPRINT_6_ALL_DOCS.md
-- /mnt/user-data/outputs/SPRINT_6_VERIFICATION.md
-- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT6.md
-- /mnt/user-data/outputs/STITCH_WORLD_CLASS_PROMPT.md
-- /mnt/user-data/outputs/STITCH_DESIGN_PROMPT.md
+- ERP document upload for college mode verification
+- Laundry priority exception flow (medical/unavailability requests)
+- Laundry no-show detection more frequent than hourly
+- Mess feedback time-window enforcement (only show breakfast during morning etc.)
+- Rate limit per-category instead of global daily limit
+- WebSockets for real-time updates (30-second polling is V1 strategy)
+- Multi-hostel management dashboard
+- RAG-enhanced complaint triage (Qdrant)
+- LangGraph migration for Agent 1
+- Native mobile app (iOS/Android)
+- WhatsApp/SMS integration
+- Complaint upvoting
+- Roommate info endpoint
+- Lost and found board
+- Visitor log
+- Automated corrective action suggestions to Mess Manager

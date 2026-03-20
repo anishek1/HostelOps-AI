@@ -1,5 +1,5 @@
 # HostelOps AI — Product Requirements Document
-**Version:** 1.1 | **Status:** Build Ready | **Constraint:** Zero-cost, open-source models, free-tier hosted services
+**Version:** 2.0 | **Status:** Sprints 1-6 Complete | **Constraint:** Zero-cost, open-source models, free-tier hosted services
 
 ---
 
@@ -15,7 +15,7 @@
 9. [Complaint State Graph](#9-complaint-state-graph)
 10. [Failure Modes & Resilience](#10-failure-modes--resilience)
 11. [Technology Stack](#11-technology-stack)
-12. [Open Decisions — Next Phase](#12-open-decisions--next-phase)
+12. [Remaining Sprint Plan](#12-remaining-sprint-plan)
 
 ---
 
@@ -43,10 +43,30 @@ HostelOps AI solves this by automating the routine, escalating the important, an
 
 | Mode | Onboarding Requirements |
 |------|------------------------|
-| **College Hostel Mode** | Student registers with Name, Room Number, College Roll Number, and uploads their ERP sheet. Assistant Warden verifies and approves before access is granted. |
-| **Autonomous Hostel / PG Mode** | Student registers with Name and Room Number only. Assistant Warden manually verifies and approves. No document upload required. |
+| **College Hostel Mode** | Student registers with Name, Room Number, Hostel Code, and College Roll Number. Assistant Warden verifies and approves before access is granted. |
+| **Autonomous Hostel / PG Mode** | Student registers with Name, Room Number, and Hostel Code only. Assistant Warden manually verifies and approves. |
 
 > In both modes, no student account is active until a human (Assistant Warden) has reviewed and approved it. Ghost accounts must be deactivated by the Assistant Warden when a student vacates.
+
+#### Deployment Model (Multi-tenant)
+HostelOps AI is a **single deployment serving multiple hostels**. Each hostel is identified by a unique **hostel code** (e.g. `IGBH-4821`).
+
+**Warden setup flow (first time):**
+1. Warden goes to the app URL
+2. Clicks "Set up my hostel" → fills hostel name, mode, floors, account details
+3. System generates unique hostel code — e.g. `IGBH-4821`
+4. Warden sees: "Your hostel code is **IGBH-4821** — share this with your students"
+5. Warden dashboard is live
+
+**Student registration flow:**
+1. Student opens the same app URL
+2. Clicks "Register" → enters name, room number, password, hostel code
+3. System validates code, links student to correct hostel
+4. Student sees "Registration Pending" screen
+5. Warden approves → student can log in
+
+#### Hostel Configuration
+All operational thresholds are stored in the `hostel_config` table — not in `.env`. Wardens can update them from the Hostel Settings screen. Defaults are seeded by `create_admin.py`.
 
 ---
 
@@ -57,19 +77,40 @@ HostelOps AI solves this by automating the routine, escalating the important, an
 | Role | Type | Key Responsibilities |
 |------|------|---------------------|
 | Student | End user | File complaints, book laundry slots, submit mess feedback, track complaint status |
-| Laundry Man | Operational staff | Receive laundry complaint assignments, mark machines as repaired |
+| Laundry Man | Operational staff | Receive laundry complaint assignments, mark slots complete, manage machine status |
 | Mess Secretary | Operational staff | Receive mess complaint assignments from Agent 1 routing |
-| Mess Manager | Supervisory staff | Receive mess dissatisfaction alerts from Agent 3 |
-| Assistant Warden | Administrative staff | Verify/approve student registrations, deactivate accounts, receive maintenance complaint assignments |
+| Mess Manager | Supervisory staff | Receive mess dissatisfaction alerts from Agent 3, publish mess menu |
+| Assistant Warden | Administrative staff | Verify/approve/reject student registrations, deactivate accounts, receive maintenance complaint assignments |
 | Warden | Supervisory authority | Receive escalated complaints, approve AI-uncertain decisions via approval queue, receive urgent alerts |
 | Chief Warden | Top authority | Receive only critical or escalated unresolved complaints — final escalation point |
 
 ### 2.2 Authentication & Access Control
-- Students must be registered and verified before accessing any feature.
-- Staff accounts are created by the system administrator during hostel setup.
-- A student account is activated only after the Assistant Warden reviews and approves the registration.
-- When a student vacates, the Assistant Warden deactivates their account.
-- Rate limiting enforced at account level: one complaint per category per day per student.
+
+**Student registration flow:**
+1. Student registers with name, room number, password, hostel code (+ roll number in college mode)
+2. Account is inactive until warden approves
+3. Warden can reject with a reason — student sees the reason and can re-register
+4. Approved students receive push + in-app notification
+5. On first login: onboarding walkthrough shown once (`has_seen_onboarding` flag on user)
+
+**Staff account creation:**
+- Only wardens can create staff accounts (laundry_man, mess_secretary, mess_manager, assistant_warden)
+- Created via warden dashboard → immediately active (no approval needed)
+- Staff change their temporary password via `PATCH /api/users/me/password`
+
+**Password reset:**
+- Students cannot self-reset passwords (no email required in V1)
+- Warden resets via `PATCH /api/users/{id}/reset-password`
+- Resets password + revokes all refresh tokens + notifies student
+
+**Account deactivation:**
+- When student vacates, warden deactivates their account
+- Deactivated student sees: "Your account has been deactivated. Contact your warden."
+- Not the generic 401 error
+
+**Rate limiting:**
+- Complaint filing: max 5 per student per day (enforced per hostel via hostel_config)
+- Wardens and staff are never rate limited on complaint endpoints
 
 ---
 
@@ -88,9 +129,9 @@ HostelOps AI uses the Supervisor Pattern. Agent 1 is the single entry point. It 
 3. Agent 1 classifies by category and severity. Mess complaints → Agent 3. Laundry complaints → Agent 2. All others → Agent 1 assigns directly.
 4. If confidence is high, Agent 1 acts automatically. If confidence is low or severity is high, it surfaces to the Warden's approval queue.
 5. Student receives automatic acknowledgement immediately.
-6. Assigned staff member receives an in-app notification via the PWA.
+6. Assigned staff member receives an in-app notification + push notification via the PWA.
 7. All warden override decisions are logged for continuous improvement.
-8. Complaint status lifecycle: Registered → Assigned → In Progress → Resolved. Student confirms resolution.
+8. Complaint status lifecycle: INTAKE → CLASSIFIED → ASSIGNED/AWAITING_APPROVAL → IN_PROGRESS → RESOLVED. Student confirms resolution.
 
 ---
 
@@ -118,159 +159,125 @@ HostelOps AI uses the Supervisor Pattern. Agent 1 is the single entry point. It 
 
 #### Confidence-Gated Action
 - **High confidence + Low/Medium severity** → Act automatically. Assign, acknowledge, notify staff.
-- **High confidence + High severity** → NEVER auto-assign. Always escalate to Warden approval queue regardless of confidence.
-- **Low confidence (any severity)** → Surface to Warden approval queue with best-guess pre-filled. Warden approves or corrects with one tap.
+- **High confidence + High severity** → NEVER auto-assign. Always escalate to Warden approval queue.
+- **Low confidence (any severity)** → Surface to Warden approval queue with best-guess pre-filled.
 
-Confidence threshold is configurable via `COMPLAINT_CONFIDENCE_THRESHOLD` env variable. Recommended starting value: `0.85`.
-
-#### Agent 1 Tools — Typed Action Definitions
-
-| Tool Name | Pydantic Signature | Purpose |
-|-----------|-------------------|---------|
-| `assign_complaint_tool` | Input: `complaint_id (str), assignee_id (str), severity (enum), category (enum)` → Output: `AssignmentResult(success: bool, notified: bool, assigned_at: datetime)` | Assigns complaint to staff, triggers notification, updates status. |
-| `escalate_complaint_tool` | Input: `complaint_id (str), escalation_target (enum: warden/chief_warden), reason (str)` → Output: `EscalationResult(success: bool, queue_item_id: str)` | Moves complaint to approval queue or Chief Warden. |
-| `request_human_approval_tool` | Input: `complaint_id (str), ai_category (enum), ai_severity (enum), ai_assignee_id (str), confidence (float)` → Output: `ApprovalRequest(queue_item_id: str, created_at: datetime)` | Creates approval queue item for Warden. |
-| `acknowledge_student_tool` | Input: `complaint_id (str), student_id (str), is_anonymous (bool)` → Output: `AcknowledgementResult(success: bool, message: str)` | Sends immediate acknowledgement. ALWAYS called first regardless of classification. |
-| `route_to_agent_tool` | Input: `complaint_id (str), target_agent (enum: laundry/mess), complaint_text (str), category (enum)` → Output: `RoutingResult(success: bool, agent_received: bool)` | Hands off to Agent 2 or Agent 3. |
-| `log_override_tool` | Input: `complaint_id (str), warden_id (str), original (ClassificationSnapshot), corrected (ClassificationSnapshot), reason (enum)` → Output: `LogResult(log_id: str)` | Records every warden correction. |
+Confidence threshold is configurable via `hostel_config.complaint_confidence_threshold` (default: 0.85).
 
 #### Anonymous Complaints
 - All staff see `Anonymous Student` instead of the student's name.
-- The Warden retains ability to view actual identity for sensitive/critical complaints.
+- Wardens (warden, chief_warden, assistant_warden) retain ability to view actual identity.
 - Anonymous complaints are classified and routed identically to named complaints.
 
-#### Abuse Prevention
-- Maximum one complaint per category per day per student.
-- Suspicious patterns (repeated high-severity in short windows) are flagged to the Warden passively.
-
-#### Override Logging
-Every Warden correction is stored with: original complaint text, AI classification, human correction, override reason (dropdown: Wrong Category / Wrong Assignee / Wrong Severity / Other), and timestamp.
+#### Complaint Templates (Sprint 7b)
+Common complaint types are available as quick-fill templates to reduce student friction. Examples: "Fan not working", "Water not coming", "Bathroom light fused". Students can tap a template to pre-fill the complaint text.
 
 ---
 
 ### 3.4 Agent 2 — Laundry Allocation Agent
 
-**Purpose:** Manages laundry slot booking calendar. Enforces fairness rules. Handles no-shows, machine breakdowns, and priority exceptions. Receives laundry complaints from Agent 1.
+**Purpose:** Manages laundry slot booking calendar. Enforces fairness rules. Handles machine breakdowns and priority requests. Receives laundry complaints from Agent 1.
 
-#### Slot System Rules (enforced invisibly)
-- One active booking per student at any time.
-- Maximum one slot per student per day.
-- No-show penalty: 48-hour priority reduction after a no-show without cancellation.
-- Cancellation without penalty: up to 15 minutes before slot start.
+#### Slot System Rules
+- One active booking per student per day.
+- No-show penalty: 48-hour priority reduction (multiplier 0.1) after a no-show without cancellation.
+- Cancellation without penalty: up to `hostel_config.laundry_cancellation_deadline_minutes` (default 15 mins) before slot start.
+- Late cancellation: same priority penalty as no-show.
 
-#### Laundry Fairness Algorithm — Explicit Implementation
+#### Laundry Fairness Algorithm
 
-> **IMPLEMENTATION NOTE:** The fairness score is computed per-request, NEVER stored. Implement as a pure function: `calculate_fairness_score(student_id: str, db: AsyncSession) -> float` in `/backend/services/laundry_service.py`
+Priority score = `min(days_since_last_booking, 30) × penalty_multiplier`
+- New students start with score 1.0 (maximum)
+- No-show in last 48 hours: `penalty_multiplier = 0.1`
+- Otherwise: `penalty_multiplier = 1.0`
+- Score is computed per-request, never stored permanently
 
-1. Retrieve student's `last_laundry_date` from `LaundrySlot` table (most recent completed slot).
-2. Calculate `days_since_last_wash = today - last_laundry_date`. If no history, treat as 30 (maximum weight).
-3. Calculate `noshow_penalty`: if student has a no-show in last 48 hours → `penalty_multiplier = 0.1`. Otherwise `penalty_multiplier = 1.0`.
-4. Calculate `fairness_score = min(days_since_last_wash, 30) * penalty_multiplier`. Range: 0–30.
-5. Display available slots sorted by time ascending (standard for all students).
-6. Students with `fairness_score >= 20` (4+ days since last wash) have first 2 available slots highlighted as "Available for you" — a UI nudge, NOT a hard reservation.
-7. Students with priority approval bypass fairness score entirely — all slots highlighted until priority booking completes.
+Students with score ≥ 20 (4+ days since last wash) have first 2 slots highlighted as "Available for you" — a UI nudge, NOT a hard reservation.
 
-#### Priority Exception Handling
-Two valid triggers only:
-- **Medical necessity** — verified by Warden via one-tap approval.
-- **Extended unavailability** — student hasn't booked in 4+ consecutive days due to full capacity. System detects automatically and flags to Warden.
-
-Priority is NEVER self-granted. Every request requires a short reason (entered in app) + explicit Warden approval.
-
-#### Machine Breakdown Sequence (auto-triggered when laundry complaint received from Agent 1)
-1. Pause all new bookings for affected machine immediately.
-2. Notify all students with upcoming bookings via PWA push — offer rebooking on available machine(s).
-3. Notify Laundry Man via in-app notification.
-4. Resume bookings automatically once Laundry Man marks machine repaired.
-
-#### Agent 2 Tools — Typed Action Definitions
-
-| Tool Name | Pydantic Signature | Purpose |
-|-----------|-------------------|---------|
-| `book_slot_tool` | Input: `student_id (str), machine_id (str), date (date), start_time (time), end_time (time)` → Output: `BookingResult(success: bool, slot_id: str, confirmation_sent: bool)` | Books slot after fairness check. Enforces one-per-day and one-active-booking rules. |
-| `cancel_slot_tool` | Input: `slot_id (str), student_id (str), cancelled_at (datetime)` → Output: `CancellationResult(success: bool, penalty_applied: bool)` | Cancels booking. Applies no-show penalty if within 15 min or post-slot. |
-| `pause_machine_tool` | Input: `machine_id (str), reason (str), reported_by (str)` → Output: `PauseResult(success: bool, affected_bookings: list[str])` | Pauses bookings for a machine. Returns affected booking IDs. |
-| `resume_machine_tool` | Input: `machine_id (str), repaired_by (str)` → Output: `ResumeResult(success: bool, bookings_resumed: int)` | Marks machine repaired and reopens for bookings. |
-| `flag_priority_request_tool` | Input: `student_id (str), reason (str), trigger (enum: medical/unavailability)` → Output: `PriorityRequest(queue_item_id: str, created_at: datetime)` | Sends priority request to Warden approval queue. |
+#### Machine Breakdown Sequence
+1. Student files laundry complaint → Agent 1 routes to Agent 2
+2. Machine marked `under_repair` immediately
+3. All future booked slots for affected machine cancelled
+4. Affected students notified via push + in-app
+5. Laundry Man notified
+6. Machine resumes bookings when Laundry Man marks it repaired
 
 ---
 
 ### 3.5 Agent 3 — Mess Feedback & Dissatisfaction Monitor
 
-**Purpose:** Collects structured mess feedback. Monitors satisfaction trends across 5 dimensions. Detects chronic dissatisfaction and sudden spikes. Alerts Warden and Mess Manager proactively. Ingests mess complaints from Agent 1 as additional signal.
+**Purpose:** Collects structured mess feedback. Monitors satisfaction trends across 5 dimensions. Detects chronic dissatisfaction and sudden spikes. Alerts Warden and Mess Manager proactively.
 
 #### Feedback Data Pipeline
-Students submit feedback through a dedicated section in the PWA (always accessible, not just notification-triggered). Students first select the meal: **Breakfast / Lunch / Dinner**. Each option is active only during/after its meal period. Once submitted, that meal's option is greyed out with a confirmation tick. **All three options reset at midnight every day.**
+Students submit feedback through a dedicated section in the PWA. Students select the meal: **Breakfast / Lunch / Dinner**. Once submitted, that meal's option shows a confirmation tick. All three options reset at midnight every day.
 
-Feedback dimensions (1–5 stars each):
+Feedback dimensions (1–5 each):
 - Food Quality
-- Food Quantity
+- Food Quantity  
 - Hygiene / Cleanliness
 - Menu Variety
 - Timing & Availability
 
-Optional one-line free-text comment. One submission per meal per student per day enforced server-side.
+Optional one-line comment (max 300 chars). One submission per meal per student per day enforced server-side.
+
+#### Feedback Streak (Sprint 7b)
+`feedback_streak` counter on User model. Increments when student submits any feedback for the day. Resets if they miss a day. Shown in student profile as a motivator for consistent participation.
+
+#### Mess Menu (Sprint 7b)
+Mess Manager publishes the current menu anytime (not locked to weekly schedule). Menu has a `valid_from` date — always shows the most recent menu. History kept for Agent 3 correlation. Students see today's menu in the Mess section.
 
 #### Dissatisfaction Detection Logic
 
-> **CHRONIC PATTERN:** Any single dimension rated below `MESS_DISSATISFACTION_THRESHOLD` (default: 2.5/5) for 3+ consecutive meals triggers a chronic alert. Alert includes: dimension, average score, response count, top complaints.
+> **CHRONIC PATTERN:** Any single dimension rated below `hostel_config.mess_alert_threshold` (default 2.5/5) for 3+ consecutive meals triggers a chronic alert.
 
-> **INCIDENT SPIKE:** Any dimension dropping by `MESS_SPIKE_DELTA` (default: 1.5) from its 7-day rolling average in a single meal triggers an immediate alert — even if absolute score isn't critically low.
+> **INCIDENT SPIKE:** Any dimension dropping by 1.5 from its 7-day rolling average in a single meal triggers an immediate alert — even if absolute score isn't critically low.
 
-If daily participation drops below 15% for 3 consecutive days, Agent 3 alerts the Warden: *"Feedback participation critically low — data may be insufficient."*
+If daily participation drops below `hostel_config.mess_min_participation` (default 15%) for 3 consecutive days → Warden alerted.
 
 #### Alert Behaviour
-- All alerts sent to both Warden and Mess Manager simultaneously via in-app notification.
-- Alerts include: scores, participation count, trend data, related complaints from Agent 1.
-- Agent does NOT prescribe corrective action — data only, Mess Manager decides.
-
-#### Agent 3 Tools — Typed Action Definitions
-
-| Tool Name | Pydantic Signature | Purpose |
-|-----------|-------------------|---------|
-| `ingest_feedback_tool` | Input: `student_id (str), meal (enum), date (date), ratings (MessRatings), comment (str\|None)` → Output: `FeedbackResult(success: bool, feedback_id: str)` | Stores rating and triggers dissatisfaction check. |
-| `check_dissatisfaction_tool` | Input: `meal (enum), date (date), dimension (enum\|None)` → Output: `DissatisfactionCheck(chronic_triggered: bool, spike_triggered: bool, alert_data: AlertPayload\|None)` | Runs detection logic against last N meals. |
-| `create_mess_alert_tool` | Input: `alert_type (enum: chronic/spike), dimension (enum), meal (enum), average_score (float), participation_count (int), related_complaint_ids (list[str])` → Output: `AlertResult(alert_id: str, notified_warden: bool, notified_mess_manager: bool)` | Creates MessAlert and sends notifications. |
-| `ingest_complaint_signal_tool` | Input: `complaint_id (str), category (enum), text (str), date (date), meal_period (enum\|None)` → Output: `SignalResult(absorbed: bool)` | Folds Agent 1 mess complaints into dissatisfaction scoring. |
+- Below `mess_alert_threshold` → alerts Mess Manager
+- Below `mess_critical_threshold` (default 2.0) → also alerts Assistant Warden
+- All alerts sent via in-app + push notifications
 
 ---
 
 ## 4. Warden & Staff Tools
 
 ### 4.1 Approval Queue
-The Warden's approval queue is the primary human-in-the-loop interface. Every uncertain decision and every High-severity complaint surfaces here. Each queue item displays:
-- Original complaint text
-- AI's best-guess classification (category, severity, proposed assignee) — pre-filled
-- AI's confidence level
-- One-tap **Approve** button
-- **Edit** option to correct before approving
-- Override reason dropdown (auto-saved to improvement log)
+- Shows all complaints awaiting human decision
+- Each item shows: complaint text, AI suggestion (category/severity/assignee), confidence score, time in queue
+- Time in queue turns amber at 15 mins, red at 30 mins
+- Warden can: approve as-is, or override with corrected values + reason
+- Auto-escalates after `hostel_config.approval_queue_timeout_minutes` (default 30 mins) — Celery beat task
 
-> If a High-severity complaint is not reviewed within `APPROVAL_QUEUE_TIMEOUT_MINUTES` (default: 30 min), the system sends an escalation notification to the Warden.
+### 4.2 Notice Board (Sprint 7b)
+Wardens post announcements visible to all students in the hostel. Students see notices on their home screen. Push notification sent when a new notice is published.
 
-### 4.2 Operations Dashboard
-Real-time and historical view across all three agents:
-- Complaint volume by category and severity (7-day and 30-day)
-- Average complaint resolution time by category and assignee
-- Student-confirmed resolution rate
-- Laundry utilization rate and no-show frequency
-- Mess satisfaction trends across 5 dimensions (7-day and 30-day charts)
-- Mess feedback participation rate
-- Evaluation metrics (see Section 6.2) — including drift alert banner if misclassification rate > 25%
-- Pending approval queue count (always visible as a badge)
+Examples: "Water supply cut tomorrow 8am-12pm", "Holiday on Friday", "New laundry rules"
 
-Daily digest notification sent each morning summarising the previous day's operations.
+### 4.3 Warden Dashboard Metrics
+All 7 evaluation metrics computed on-demand:
+1. Misclassification rate (overrides / total classified, rolling 30d)
+2. Override rate by category
+3. False high-severity rate
+4. Student-confirmed resolution rate
+5. Avg approval queue latency
+6. Mess feedback participation rate
+7. Laundry no-show rate
 
-### 4.3 Staff Notification Types
+**Drift alert:** If misclassification rate > 25% in any 7-day window → banner displayed: "AI classification accuracy has dropped. Manual review recommended."
 
-| Role | Trigger | Content |
-|------|---------|---------|
-| Laundry Man | Complaint assigned / machine breakdown | Repair needed on machine X — bookings paused |
-| Mess Secretary | Mess complaint assigned from Agent 1 | Complaint routed to you for action |
-| Mess Manager | Dissatisfaction alert from Agent 3 | Chronic or spike alert with full context and scores |
-| Assistant Warden | New registration pending / maintenance complaint | Verify student account / complaint assigned |
-| Warden | Approval queue item / urgent alert / queue timeout | Pending approval / high-severity complaint / escalation |
-| Chief Warden | Critical escalation from Warden | Unresolved escalation requiring top-level action |
+Dashboard also shows:
+- `pending_registrations` count
+- `pending_approval_queue` count
+
+### 4.4 Hostel Settings
+All thresholds configurable from Settings screen — no `.env` editing required:
+- Hostel name, mode, total floors
+- Complaint confidence threshold
+- Approval queue timeout
+- Mess alert/critical thresholds
+- Laundry slot hours, no-show penalty, cancellation deadline
 
 ---
 
@@ -278,9 +285,9 @@ Daily digest notification sent each morning summarising the previous day's opera
 
 ### 5.1 Complaint Filing
 1. Student opens PWA → navigates to "File Complaint"
-2. Enters free-text description
+2. Optionally selects a complaint template (Sprint 7b) or types free-text (min 10 chars, max 1000 chars)
 3. Optionally toggles "Submit Anonymously"
-4. Submits → receives immediate acknowledgement: *"Your complaint has been registered. Track its status below."*
+4. Submits → receives immediate acknowledgement
 5. Complaint appears in personal tracker with status: Registered
 
 ### 5.2 Complaint Status Tracker
@@ -292,36 +299,45 @@ Daily digest notification sent each morning summarising the previous day's opera
 | **In Progress** | Staff has acknowledged and is working on it. |
 | **Resolved** | Staff marked as resolved. Student prompted to confirm. |
 | **Reopened** | Student marked as unresolved. Reopened with elevated priority. |
+| **Escalated** | Elevated to Warden or Chief Warden. |
 
-When marked Resolved, student receives: *"Your complaint has been marked resolved. Was your issue addressed?"* with Yes/No. If No → complaint reopens with elevated priority and Warden is notified.
+When marked Resolved → student receives: "Was your issue resolved?" with Yes/No. If No → complaint reopens with elevated priority (`is_priority=True`) and Warden notified.
 
 ### 5.3 Laundry Booking
-1. Student opens "Book Laundry Slot" on PWA
-2. Available time slots for both machines displayed. Full slots greyed out.
-3. Student selects a slot and confirms. Confirmation sent via push notification.
-4. Reminder sent 30 minutes before the slot.
-5. Cancel up to 15 minutes before slot start — no penalty.
-6. Cancellation after 15 min or no-show triggers 48-hour priority penalty.
+1. Student opens "Book Laundry Slot"
+2. Date strip + machine tabs shown. Slots as grid (green=available, grey=taken, blue=yours, red=repair)
+3. Student selects a slot → confirmation bottom sheet
+4. Cancel up to `laundry_cancellation_deadline_minutes` before start — no penalty
+5. Late cancellation or no-show triggers 48-hour priority penalty
 
 ### 5.4 Mess Feedback
-The mess feedback area is a dedicated, always-accessible section on the PWA — separate from complaint filing. Students select which meal they are rating: **Breakfast / Lunch / Dinner**.
+Dedicated section, always accessible. Students select meal → rate 5 dimensions with stars → optional comment → submit. Submitted meals show green tick. All reset at midnight.
 
-- Each option is active only during and after its meal period.
-- Once submitted, that meal option shows a confirmation tick and is greyed out.
-- **All three options reset at midnight every day.**
-- Push notifications after each meal period serve as reminders — but the section is always open independently.
-- Students rate across 5 dimensions with 1–5 stars and an optional one-line comment.
+#### Feedback Streak
+Student profile shows how many consecutive days they've submitted feedback. Motivates daily participation which improves Agent 3 data quality.
+
+### 5.5 Mess Menu (Sprint 7b)
+Students see the current active mess menu in the Mess section. Published by Mess Manager anytime. Shows what's being served today for breakfast, lunch, and dinner.
+
+### 5.6 Notice Board (Sprint 7b)
+Students see warden announcements on their home screen. New notices trigger push notifications. Notices remain visible until warden removes them.
+
+### 5.7 First Login Onboarding
+Shown exactly once per account after first approved login. 3-step walkthrough:
+- Step 1: "File complaints — track everything from here"
+- Step 2: "Book laundry slots — fair and transparent"
+- Step 3: "Rate your mess — your feedback drives improvements"
+
+`has_seen_onboarding` flag on User model. Once shown, never shown again.
 
 ---
 
 ## 6. Feedback Loop & Evaluation
 
 ### 6.1 Override Logging
-Every Warden correction stored with: original complaint text, AI classification, human correction, override reason, timestamp. Foundation for model improvement.
+Every Warden correction stored with: original complaint text, AI classification, human correction, override reason (dropdown: Wrong Category / Wrong Assignee / Wrong Severity / Other), and timestamp. Foundation for model improvement.
 
 ### 6.2 Evaluation Metrics
-
-These metrics must be tracked and surfaced on the Warden dashboard. They are the objective health check for the AI system.
 
 | Metric | Formula | Acceptable Threshold | Action if Breached |
 |--------|---------|---------------------|-------------------|
@@ -333,13 +349,10 @@ These metrics must be tracked and surfaced on the Warden dashboard. They are the
 | Mess Feedback Participation Rate | Unique submitting / Total active students (daily) | > 40% daily | Adjust reminder timing |
 | Laundry No-Show Rate | No-shows / Total bookings (rolling 7d) | < 10% | Review penalty communication |
 
-> **DRIFT ALERT:** If Misclassification Rate exceeds 25% in any 7-day rolling window, the dashboard must display a banner: *"AI classification accuracy has dropped. Manual review recommended."*
+> **DRIFT ALERT:** If Misclassification Rate exceeds 25% in any 7-day rolling window → dashboard displays banner: *"AI classification accuracy has dropped. Manual review recommended."*
 
 ### 6.3 Periodic Model Review
-Monthly review of override log + evaluation metrics dashboard. Patterns of consistent misclassification → iterate on classification prompt and category definitions. No retraining required — prompt iteration only.
-
-### 6.4 Student-Confirmed Resolution
-Low resolution confirmation rates for a specific assignee or category flag a structural problem. Surfaced explicitly on the Warden dashboard.
+Monthly review of override log + evaluation metrics. Patterns of consistent misclassification → iterate on classification prompt. No retraining required — prompt iteration only.
 
 ---
 
@@ -347,18 +360,21 @@ Low resolution confirmation rates for a specific assignee or category flag a str
 
 ### 7.1 Technology Constraints
 
-> **CONSTRAINT:** Zero-cost infrastructure — open-source models, free-tier hosted services. No paid APIs. No recurring licensing costs. Every service has a documented self-hosting alternative.
-
 | Layer | Choice | Self-Host Alternative |
 |-------|--------|-----------------------|
-| LLM | Groq free tier + Llama 3 (open-source) | vLLM running Llama 3 on local hardware |
+| LLM | Groq free tier + llama-3.3-70b-versatile | vLLM running Llama 3 on local hardware |
 | Backend | Python + FastAPI + Pydantic v2 + SQLAlchemy + Alembic | — |
 | Agent Orchestration | LangChain (V1) — LangGraph (V2 upgrade path) | — |
-| Frontend | React 18 + TypeScript + Vite + PWA + Shadcn/UI | — |
+| Frontend | React 18 + TypeScript + Vite + PWA + Tailwind + Shadcn/UI | — |
 | Database | PostgreSQL via Supabase free tier | PostgreSQL on any VPS or Docker |
 | Task Queue | Celery + Upstash Redis free tier | Redis on Docker |
 | Hosting | Railway free tier | Docker Compose on any Linux server |
-| Push Notifications | Web Push API (pywebpush) | — fully free, no alternative needed |
+| Auth | JWT via python-jose + bcrypt (direct, NOT passlib) | — |
+| Push Notifications | Web Push API (pywebpush) | — |
+
+> **NOTE:** passlib was removed from the project. Never use it. Use `hash_password()` and `verify_password()` from `auth_service.py` which use bcrypt directly.
+
+> **LLM NOTE:** `llama3-8b-8192` was decommissioned by Groq in March 2026. Current model: `llama-3.3-70b-versatile`. Always use `settings.GROQ_MODEL_NAME` — never hardcode.
 
 ### 7.2 Performance Expectations
 - Complaint acknowledgement to student: within 5 seconds of submission
@@ -366,37 +382,47 @@ Low resolution confirmation rates for a specific assignee or category flag a str
 - Approval queue surfacing: within 10 seconds of submission
 - Push notifications for staff assignments: within 30 seconds
 - Mess alert generation after threshold crossed: within 5 minutes
+- In-app notification refresh: within 30 seconds (polling)
 
-### 7.3 Security Hardening
-- **Prompt Injection Detection** — pre-processing strips injection patterns from all free-text fields before LLM. Flagged inputs logged and surfaced to Warden passively.
-- **Input Sanitization** — all string inputs trimmed, length-capped (complaint text: max 1000 chars, comments: max 300 chars), HTML-escaped before storage or LLM processing.
-- **Rate Limiting** — per-IP: 30 requests/minute to any endpoint. Per-account: 1 complaint/category/day, 1 laundry booking/day, 3 feedback submissions/day.
-- **Audit Logs** — every state-changing action written to immutable audit log with user ID, action, timestamp, IP address.
-- **JWT Rotation** — access tokens expire after 24 hours. Refresh tokens expire after 30 days. Token invalidated immediately on suspicious activity.
-- **HTTPS Enforced** — Railway enforces HTTPS. PWA service worker registered only over HTTPS.
-- **Anonymous complaint identity** — stored in separate encrypted field accessible only to Warden role.
-- **ERP documents** — stored securely, accessible only to Assistant Warden.
+### 7.3 Security
+- **Prompt Injection Detection** — pre-processing strips injection patterns. Flagged inputs logged. Original stored in `flagged_input` field.
+- **Input Sanitization** — all string inputs trimmed, length-capped, HTML-escaped.
+- **Rate Limiting** — per-user, configurable via hostel_config. Wardens never rate limited.
+- **Audit Logs** — every state-changing action written to audit log with user ID, action, timestamp, IP address.
+- **JWT Rotation** — access tokens expire after 24 hours. Refresh tokens expire after 30 days. Token rotation on every refresh. Revoked token reuse triggers all-session invalidation.
+- **HTTPS Enforced** — Railway enforces HTTPS.
+- **Anonymous complaint identity** — accessible only to Warden roles.
+- **Password Reset** — warden-only in V1. No self-service (no email field required).
+- **CORS** — locked to frontend URL only in production (Sprint D).
 
 ---
 
 ## 8. Out of Scope (V1)
-- WhatsApp / SMS integration — API cost constraints
-- Offline functionality — requires active internet connection
-- Automated corrective action suggestions to Mess Manager — alerts with data only
+
+**Deferred to V2:**
+- ERP document upload (file upload for college mode verification — manual warden approval is sufficient for V1)
+- Laundry priority exception flow (medical/unavailability requests — fairness score alone is sufficient for V1)
+- Laundry no-show detection frequency improvement (currently hourly — acceptable for V1)
+- Mess feedback time-window enforcement (any meal can be rated at any time in V1)
+- Rate limit per-category (currently global 5/day — per-category deferred)
+- WebSockets for real-time updates (30-second polling is sufficient for V1)
+- Multi-hostel management dashboard (single-hostel management only per warden)
+- RAG-enhanced complaint triage (Qdrant vector memory — no external dependencies in V1)
+- LangGraph migration (documented upgrade path, not implemented in V1)
 - Native mobile app (iOS/Android) — PWA covers all mobile use cases
-- Attendance or financial management — outside operational scope
-- Multi-hostel management from a single dashboard — single-hostel deployment only
-- Vector memory / RAG-enhanced triage (Qdrant) — deferred to V2
-- Automated drift monitoring alerts — V1 uses dashboard metrics only
-- LangGraph migration — documented upgrade path, not V1 implementation
+- WhatsApp/SMS integration — API cost constraints
+- Offline functionality — requires active internet connection
+- Complaint upvoting
+- Roommate info endpoint
+- Lost and found board
+- Visitor log
+- Automated corrective action suggestions to Mess Manager
 
 ---
 
 ## 9. Complaint State Graph
 
 ### 9.1 States
-
-Every complaint exists in exactly one state at any time. State transitions must be validated at the service layer — invalid transitions throw an error, never silently succeed.
 
 | State | Definition |
 |-------|-----------|
@@ -406,7 +432,7 @@ Every complaint exists in exactly one state at any time. State transitions must 
 | `ASSIGNED` | Assigned to a staff member. Staff notified. |
 | `IN_PROGRESS` | Staff acknowledged and is actively working on it. |
 | `RESOLVED` | Staff marked resolved. Student prompted for confirmation. |
-| `REOPENED` | Student confirmed unresolved. Back in queue with elevated priority. |
+| `REOPENED` | Student confirmed unresolved. Back in queue with elevated priority (`is_priority=True`). |
 | `ESCALATED` | Elevated to Warden or Chief Warden due to severity, sensitivity, or inaction. |
 
 ### 9.2 Valid Transitions
@@ -418,87 +444,122 @@ Every complaint exists in exactly one state at any time. State transitions must 
 | `CLASSIFIED → ASSIGNED` | High-confidence, non-sensitive — auto-assigned |
 | `CLASSIFIED → AWAITING_APPROVAL` | Low confidence OR high severity |
 | `AWAITING_APPROVAL → ASSIGNED` | Warden approves or corrects AI suggestion |
-| `AWAITING_APPROVAL → ESCALATED` | Warden escalates directly to Chief Warden |
-| `AWAITING_APPROVAL → ESCALATED` | Queue item unreviewed for > `APPROVAL_QUEUE_TIMEOUT_MINUTES` |
+| `AWAITING_APPROVAL → ESCALATED` | Warden escalates directly OR queue item unreviewed > timeout |
 | `ASSIGNED → IN_PROGRESS` | Staff acknowledges in their dashboard |
 | `ASSIGNED → ESCALATED` | Sits in ASSIGNED for > 24 hours without IN_PROGRESS — auto-escalates |
 | `IN_PROGRESS → RESOLVED` | Staff marks resolved |
 | `RESOLVED → REOPENED` | Student taps No on resolution confirmation |
 | `REOPENED → ASSIGNED` | Re-assigned with elevated priority. Warden notified. |
-| `ESCALATED → ASSIGNED` | Chief Warden / Warden manually assigns from escalation view |
+| `ESCALATED → ASSIGNED` | Chief Warden / Warden manually assigns |
 
-> **IMPLEMENTATION NOTE:** Implement state transitions as a single dedicated function: `transition_complaint(complaint_id, from_state, to_state, triggered_by, db)` in `/backend/services/complaint_service.py`. This function validates the transition against the allowed list, updates the DB, triggers the appropriate tool, and writes to the audit log. **Never update complaint status directly from a route.**
+> **IMPLEMENTATION NOTE:** `transition_complaint(complaint_id, from_state, to_state, triggered_by, db, ip_address)` in `complaint_service.py` is the ONLY place complaint.status is updated. VALID_TRANSITIONS dict is defined only here. Pass `ip_address` from `request.client.host` always.
 
 ---
 
 ## 10. Failure Modes & Resilience
 
 ### 10.1 Design Philosophy
-HostelOps AI must degrade gracefully under every failure condition. No failure should leave a student complaint silently lost or a warden unaware. The fallback chain is always: **retry → rule-based fallback → manual escalation**. The system must never fail silently.
+HostelOps AI must degrade gracefully under every failure condition. The fallback chain is always: **retry → rule-based fallback → manual escalation**. The system must never fail silently.
 
 ### 10.2 Failure Scenarios & Responses
 
 | Failure Scenario | Response | Pattern |
 |-----------------|----------|---------|
-| Groq API timeout or 5xx | Celery retries up to 3 times with exponential backoff (2s, 4s, 8s). If all fail → transition to `AWAITING_APPROVAL` with note: *"AI classification unavailable — manual review required."* Warden notified immediately. | Retry + manual fallback |
-| Confidence score parsing fails | If LLM response can't be parsed into valid `ClassificationResult`, treat as low-confidence → route to `AWAITING_APPROVAL`. Log raw response. Never crash the request. | Parse fallback |
-| LLM hallucinates invalid category | Pydantic validation rejects any category not in the defined enum. Invalid output caught, logged, complaint routes to `AWAITING_APPROVAL`. Warden sees: *"AI returned unrecognised category."* | Schema validation |
-| Celery / Redis crash | FastAPI detects Celery unavailability on submission. Complaint written to DB as `AWAITING_APPROVAL` immediately. Student acknowledged. Cron job checks for complaints stuck in `INTAKE` or `AWAITING_APPROVAL` > 5 minutes and alerts Warden. | Sync fallback + cron monitor |
-| Prompt injection attempt | Pre-processing detects injection patterns before text reaches LLM. Sanitized version is classified. Original stored in `flagged_input` field. Passive notification sent to Warden: *"Possible prompt injection detected in complaint [ID]."* | Sanitize + flag + log |
-| Database connection failure | SQLAlchemy connection pool retries 3 times. If DB unreachable > 30 seconds → FastAPI returns 503 with: *"System temporarily unavailable. Your complaint has not been lost — please try again."* | Connection pool + 503 |
-| Push notification delivery failure | pywebpush failures caught and logged. In-app notification inbox is the fallback — all notifications written to DB regardless of push delivery success. | In-app inbox fallback |
-| Mess feedback participation collapse | If daily participation < 15% for 3 consecutive days → Agent 3 alerts Warden: *"Mess feedback participation critically low — data may be insufficient for reliable detection."* | Participation monitor |
+| Groq API timeout or 5xx | Celery retries up to 3 times with exponential backoff. If all fail → AWAITING_APPROVAL. Warden notified. | Retry + manual fallback |
+| Confidence score parsing fails | Treat as low-confidence → AWAITING_APPROVAL. Log raw response. Never crash. | Parse fallback |
+| LLM hallucinates invalid category | Pydantic validation rejects. Complaint routes to AWAITING_APPROVAL. | Schema validation |
+| Celery / Redis crash | Complaint written to DB as AWAITING_APPROVAL immediately. Student acknowledged. | Sync fallback |
+| Prompt injection attempt | Sanitized version classified. Original stored in `flagged_input`. Warden notified passively. | Sanitize + flag + log |
+| Database connection failure | SQLAlchemy retries 3 times. If unreachable > 30s → 503. | Connection pool + 503 |
+| Push notification delivery failure | Caught and logged. In-app notification always written to DB regardless. | In-app inbox fallback |
+| Mess feedback participation collapse | If < 15% for 3 consecutive days → Agent 3 alerts Warden. | Participation monitor |
 
 ### 10.3 Rule-Based Fallback Classifier
 
-When LLM is unavailable, a deterministic keyword-based classifier serves as last resort. Implement as a pure function with no external dependencies in `/backend/services/fallback_classifier.py`.
-
-> **IMPORTANT:** The fallback classifier must always add a system note to the complaint record: `classified_by: "fallback"`. The Warden dashboard must display this distinction clearly — wardens must always know which complaints were AI-classified vs fallback-classified.
-
 | Trigger Keywords | Fallback Classification |
 |-----------------|------------------------|
-| food, mess, meal, breakfast, lunch, dinner, cook, taste, hygiene | Category: mess \| Severity: medium \| Assignee: Mess Manager |
-| laundry, washing, machine, clothes, slot, dryer | Category: laundry \| Severity: medium \| Assignee: Laundry Man |
-| water, electricity, fan, light, AC, furniture, door, window, plumbing | Category: maintenance \| Severity: medium \| Assignee: Assistant Warden |
+| food, mess, meal, breakfast, lunch, dinner, cook, taste, hygiene | Category: mess \| Severity: medium |
+| laundry, washing, machine, clothes, slot, dryer | Category: laundry \| Severity: medium |
+| water, electricity, fan, light, AC, furniture, door, window, plumbing | Category: maintenance \| Severity: medium |
 | fight, harassment, threat, abuse, unsafe, scared, uncomfortable | Category: interpersonal \| Severity: HIGH \| → AWAITING_APPROVAL always |
-| No keyword match | Category: uncategorised \| Severity: medium \| → AWAITING_APPROVAL with note: *"Fallback classifier — no match found"* |
+| No keyword match | Category: uncategorised \| Severity: medium \| → AWAITING_APPROVAL |
+
+`classified_by="fallback"` always set on the complaint record.
 
 ---
 
 ## 11. Technology Stack
 
-> **LANGGRAPH UPGRADE PATH:** LangChain handles V1's linear chains well. When complexity grows — particularly around reopen → escalate → reassign cycles — migrate Agent 1 to a LangGraph state machine where each node maps to a complaint state (Section 9) and edges map to valid transitions. The Pydantic schemas and tool definitions in this PRD are already LangGraph-compatible. No data model changes required for migration.
-
 ### 11.1 Complete Stack
 
-| Layer | Technology | Notes & Self-Host Alternative |
-|-------|-----------|-------------------------------|
-| Frontend | React 18 + TypeScript + Vite + PWA + Shadcn/UI | TypeScript gives AI full type context. Shadcn for pre-built components. |
-| Backend | Python + FastAPI + Pydantic v2 + SQLAlchemy + Alembic | Pydantic is the single source of truth for all data shapes. |
-| Agent Orchestration | LangChain (V1) | LangGraph is V2 upgrade path. |
-| LLM | Groq free tier + Llama 3 | Self-host: vLLM + Llama 3 on local hardware. |
-| Task Queue | Celery + Upstash Redis (free tier) | Self-host: Redis on Docker. |
-| Database | PostgreSQL via Supabase (free tier) | Self-host: PostgreSQL on Docker. |
-| Authentication | JWT via python-jose + passlib | Role-based access via JWT claims. |
-| Hosting | Railway (free tier) | Self-host: Docker Compose on any Linux server. |
-| Push Notifications | Web Push API (pywebpush backend) | Fully free. Built into PWA standard. |
-| Config | python-dotenv + .env file | All secrets in .env. Never hardcoded. |
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Frontend | React 18 + TypeScript + Vite + PWA + Tailwind + Shadcn/UI | Sprint F |
+| Backend | Python + FastAPI + Pydantic v2 + SQLAlchemy + Alembic | Sprints 1-6 complete |
+| Agent Orchestration | LangChain | LangGraph is V2 upgrade path |
+| LLM | Groq free tier + llama-3.3-70b-versatile | llama3-8b-8192 decommissioned March 2026 |
+| Task Queue | Celery + Upstash Redis (free tier) | Windows dev: --pool=solo |
+| Database | PostgreSQL via Supabase (free tier) | Port 5432 always, never 6543 |
+| Auth | JWT via python-jose + bcrypt (direct) | passlib removed |
+| Hosting | Railway | Docker Compose on Sprint D |
+| Push Notifications | Web Push API (pywebpush) | VAPID keys required |
+| Config | python-dotenv + pydantic-settings | All secrets in .env |
+
+> **LANGGRAPH UPGRADE PATH:** The Pydantic schemas and tool definitions are already LangGraph-compatible. When complaint volume grows — migrate Agent 1 to a LangGraph state machine. No data model changes required.
 
 ### 11.2 Deployment Modes
 
-**Development / Demo Mode** — Vercel (frontend) + Railway (backend) + Supabase + Upstash + Groq. Everything hosted, zero setup. Cost: $0–$5/month (Railway hobby plan for always-on backend recommended).
+**Development:** uvicorn + celery --pool=solo locally. Supabase + Upstash free tier. No Docker needed.
 
-**Production / Hostel Mode** — Docker Compose on a college server. Everything self-hosted except LLM (Groq) and optionally frontend (Vercel). Cost: $0 ongoing.
+**Production (Sprint D):** Docker Compose on Railway or any Linux server. CORS locked to frontend URL.
 
-> **Railway free tier note:** The free tier sleeps the backend after inactivity. For a always-on hostel system, the Railway hobby plan ($5/month) is strongly recommended. Free workaround: use UptimeRobot (free) to ping the backend every 5 minutes.
+> **Railway free tier note:** Sleeps after inactivity. Use UptimeRobot (free) to ping every 5 minutes, or Railway hobby plan ($5/month).
 
 ---
 
-## 12. Open Decisions — Next Phase
+## 12. Remaining Sprint Plan
 
-### Design Discussion
-1. UI/UX design for student complaint and laundry booking flows
-2. Warden approval queue interface design
-3. Dashboard layout and data visualisation approach
-4. Mess feedback widget design to maximise participation rate
-5. Mobile-first vs desktop-first layout priority
+### Sprint 7 — Multi-tenant Architecture
+- `hostels` table with unique hostel code generation
+- `hostel_id` added to all relevant tables (users, complaints, slots, feedback, etc.)
+- Data isolation on every query — users only see their hostel's data
+- `POST /api/hostels/setup` — warden creates hostel, gets code
+- `GET /api/hostels/{code}/info` — public, returns hostel name + mode
+- Student registration accepts `hostel_code` field
+- Alembic migrations for all changes
+
+### Sprint 7b — API Polish + New Features
+**API completeness:**
+- Pagination on all list endpoints (limit + offset)
+- Consistent error format audit — all errors: `{ "detail": "string" }`
+- `GET /api/users` for wardens with filters
+- `GET /api/complaints` search + filter for wardens
+- `PATCH /api/users/me/password` self-service password change
+- Response model audit — every route has explicit response_model
+- Past date validation on laundry booking
+- Complaint minimum length (10 chars)
+- Timezone fix on all datetime responses
+- `GET /health` endpoint
+- Document 30s polling convention in CONVENTIONS.md
+
+**New features:**
+- Mess menu (POST/GET /api/mess/menu/*)
+- Notice board (POST/GET/DELETE /api/notices)
+- Complaint templates (GET /api/complaints/templates)
+- Feedback streak counter on User model
+
+### Sprint F — React PWA Frontend
+Full React 18 + TypeScript + Vite + Tailwind + Shadcn/UI build.
+Design system: Clash Display + General Sans, Indigo primary, Saffron accent, Jade success, Vermillion danger.
+All 20 screens per Stitch design brief.
+
+### Sprint D — Docker + Deployment
+- Docker + docker-compose for full stack
+- Railway one-click deploy button on GitHub README
+- CORS locked to frontend URL
+- Environment variable documentation
+- Landing/marketing page at root URL
+- Production checklist
+
+### V2 Deferrals
+ERP document upload, laundry priority exceptions, mess time-window enforcement, rate limit per-category, WebSockets, multi-hostel dashboard, RAG (Qdrant), LangGraph, native mobile app, WhatsApp/SMS, complaint upvoting, roommate info, lost and found, visitor log.
