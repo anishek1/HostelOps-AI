@@ -1,5 +1,5 @@
 # HostelOps AI — Project State Document & AI Onboarding Prompt
-# Version: Sprint 5 Complete
+# Version: Sprint 6 Complete
 # Last Updated: March 2026
 # Purpose: This file is the single source of truth for the current state of the project.
 #          Paste this into ANY AI assistant (Opus, Sonnet, Gemini, or any future model)
@@ -463,6 +463,42 @@ INTAKE → CLASSIFIED → AWAITING_APPROVAL → ASSIGNED → IN_PROGRESS → RES
 
 ---
 
+### Sprint 6 — Backend Completions + Flow Fixes ✅
+
+**What was built:**
+- `backend/models/user.py` — updated with is_rejected, rejection_reason, has_seen_onboarding fields
+- `backend/services/user_service.py` — reject_user(), warden_reset_password(), create_staff_account()
+- `backend/services/auth_service.py` — login_user() intercepts rejected accounts with 403 + reason
+- `backend/services/metrics_service.py` — all 3 analytics stubs replaced with real SQLAlchemy queries
+- `backend/routes/users.py` — POST /api/users/{id}/reject, PATCH /api/users/{id}/reset-password, POST /api/staff, GET /api/staff, GET /api/users/me, PATCH /api/users/me/onboarding-seen
+- `backend/routes/auth.py` — login response updated to include full user object
+- `backend/routes/analytics.py` — complaints, mess, laundry endpoints return real data
+- `backend/schemas/user.py` — StaffCreate, StaffRead schemas added, UserRead updated with new fields
+- `backend/schemas/metrics.py` — DashboardMetrics expanded with pending_registrations, pending_approval_queue
+
+**New Alembic migrations:**
+- Sprint 6 user fields: is_rejected, rejection_reason, has_seen_onboarding (server_default=false)
+- Notification type enum values: registration_approved, registration_rejected, password_reset, account_deactivated
+
+**All backend gaps closed. Backend is now feature-complete for Sprint 7 (React PWA).**
+
+### Sprint 6 Deviations
+
+**Deviation 1 — PATCH /api/users/me/onboarding-seen returns full UserRead not minimal response**
+- Spec requested returning `{ "has_seen_onboarding": true }` only.
+- Implementation returns full UserRead schema (consistent with all other user routes).
+- Frontend gets the full updated user state in one call — no extra fetch needed.
+- Rule: Use the full UserRead response from this endpoint. Do not change to a minimal response.
+
+**Deviation 2 — Analytics field names match actual Sprint 4 model columns**
+- metrics_service.py initially used wrong field names (taste_score, hygiene_score, etc.)
+- Fixed to use actual MessFeedback column names: food_quality, hygiene, menu_variety, food_quantity, timing
+- complaints analytics fixed to handle NULL category/severity on INTAKE complaints
+- password reset fixed: refresh token column is `revoked` not `is_revoked`
+- Rule: Always check PROJECT_STATE.md Sprint 4 deviations before writing queries against mess/laundry models
+
+---
+
 ## SECTION 6 — ENVIRONMENT VARIABLES
 
 All variables live in `/backend/.env` (not committed). `/backend/.env.example` is committed with all names but no values.
@@ -564,6 +600,31 @@ When a new hostel deploys HostelOps AI, wardens need a one-time setup wizard to 
 
 If you are reading this to verify the current state of the project, check every item below against the actual codebase. Report exactly: ✅ PASS, ❌ FAIL, or ⚠️ DEVIATION (with explanation).
 
+### Sprint 6 Verification (COMPLETE ✅)
+
+**Code Audit — Gemini 3.1 Pro**
+- Result: PASS — 63 items passed, 0 failures, 1 acceptable deviation
+- All golden rules confirmed: logger, db.refresh, UUID validators, no passlib, VALID_TRANSITIONS
+
+**Manual Checks — 9/9 PASS (March 20, 2026)**
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Login has full user object | ✅ PASS | access_token + refresh_token + user with all fields |
+| GET /api/users/me | ✅ PASS | Full profile returned for all roles |
+| Reject registration | ✅ PASS | is_rejected=true, reason stored |
+| Rejected login blocked | ✅ PASS | HTTP 403 with rejection reason |
+| Create staff account | ✅ PASS | Immediately verified + active |
+| Onboarding flag | ✅ PASS | PATCH sets has_seen_onboarding=true |
+| Dashboard pending counts | ✅ PASS | pending_registrations=1, pending_approval_queue=8 |
+| Analytics real data | ✅ PASS | All 3 stubs replaced with real queries |
+| Password reset | ✅ PASS | Old password rejected, new password works |
+
+Issues found and fixed during manual checks:
+1. `get_complaints_analytics()` crashed on NULL category/severity → added None checks
+2. `get_mess_analytics()` used wrong field names (taste_score etc.) → fixed to actual column names
+3. `warden_reset_password()` used `is_revoked` → fixed to `revoked` (actual column name)
+
 ### Sprint 5 Verification (COMPLETE ✅)
 
 **Code Audit — Gemini 3.1 Pro**
@@ -582,9 +643,9 @@ If you are reading this to verify the current state of the project, check every 
 | VAPID public key | ✅ PASS | Key returned without auth |
 | Push subscribe | ✅ PASS | Subscription saved |
 | Dashboard metrics | ✅ PASS | All 7 metrics + drift_alert |
-| Complaints analytics | ⚠️ PARTIAL | Stub — deferred to Sprint 6 |
-| Mess analytics | ⚠️ PARTIAL | Stub — deferred to Sprint 6 |
-| Laundry analytics | ⚠️ PARTIAL | Stub — deferred to Sprint 6 |
+| Complaints analytics | ✅ FIXED in Sprint 6 | Real data with category/status/severity breakdown |
+| Mess analytics | ✅ FIXED in Sprint 6 | Per-dimension averages + daily participation |
+| Laundry analytics | ✅ FIXED in Sprint 6 | Bookings, noshow rate, cancellations |
 | Override analytics | ✅ PASS | 1 override returned from Sprint 3 tests |
 | Celery beat tasks | ✅ PASS | Beat running, check-approval-timeouts fired |
 
@@ -731,13 +792,15 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 6 (starting next)
+Current sprint: Sprint 7 — React PWA Frontend
 Sprint 1: ✅ Complete and verified
 Sprint 2: ✅ Complete, verified, human-checked (9/9)
 Sprint 3: ✅ Complete, verified, human-checked (9/9)
 Sprint 4: ✅ Complete, verified, human-checked (11/11)
-Sprint 5: ✅ Complete, verified, human-checked (9 PASS, 3 PARTIAL — stubs deferred to Sprint 6)
-Sprint 6: ⏳ Starting next — React PWA Frontend
+Sprint 5: ✅ Complete, verified, human-checked (9/12 full, 3 stubs)
+Sprint 6: ✅ Complete, verified, human-checked (9/9) — backend feature-complete
+Sprint 7: 🔄 React PWA Frontend (starting next)
+Sprint 8: ⏳ UI/UX Polish (after Stitch designs ready)
 Your task: [DESCRIBE TASK]
 ```
 
@@ -785,6 +848,8 @@ Paste this entire document into the new AI and say:
 22. **notify_user() is the single notification function** — never create separate push/in-app variants. Push is always called inside notify_user() with try/except, never separately.
 23. **Always run `alembic upgrade head` after pulling new code** — new migrations may have been added. Missing migrations cause 500 errors on first use of new enum values.
 24. **Analytics stub endpoints are intentional** — GET /api/analytics/complaints, /mess, /laundry return stubs until Sprint 6. Do not implement them before frontend work begins.
+25. **Always check Sprint 4 deviations before querying mess/laundry models.** MessFeedback uses food_quality, hygiene, menu_variety, food_quantity, timing — NOT taste_score or similar. RefreshToken uses `revoked` not `is_revoked`.
+26. **Analytics queries must handle NULL enum fields.** Complaints in INTAKE state have NULL category and severity. Always check `if field is not None` before calling `.value` on enum fields.
 
 ---
 
@@ -803,3 +868,10 @@ Paste this entire document into the new AI and say:
 - /mnt/user-data/outputs/SPRINT_5_FIXES.md
 - /mnt/user-data/outputs/SPRINT_5_MANUAL_CHECKS.md
 - /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT5.md
+
+**Sprint 6:**
+- /mnt/user-data/outputs/SPRINT_6_ALL_DOCS.md
+- /mnt/user-data/outputs/SPRINT_6_VERIFICATION.md
+- /mnt/user-data/outputs/UPDATE_PROJECT_STATE_SPRINT6.md
+- /mnt/user-data/outputs/STITCH_WORLD_CLASS_PROMPT.md
+- /mnt/user-data/outputs/STITCH_DESIGN_PROMPT.md
