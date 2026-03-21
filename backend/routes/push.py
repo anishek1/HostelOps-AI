@@ -69,6 +69,6 @@ async def unsubscribe(
     Remove a push subscription by endpoint URL.
     Users can only unsubscribe their own subscriptions.
     """
-    await push_service.remove_subscription(endpoint, db)
+    await push_service.remove_subscription(endpoint, str(current_user.id), db)
     logger.info(f"User {current_user.id} unsubscribed push endpoint")
     return {"status": "unsubscribed"}

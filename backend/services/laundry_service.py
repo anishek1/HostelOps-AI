@@ -13,7 +13,6 @@ from typing import Optional
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import settings
 from models.laundry_slot import LaundrySlot
 from models.machine import Machine
 from schemas.enums import LaundrySlotStatus, MachineStatus, NotificationType
@@ -32,9 +31,11 @@ async def calculate_priority_score(student_id: uuid.UUID, db: AsyncSession) -> f
     New students get max priority (1.0).
     Sprint 5: Applies no_show or late_cancellation penalty (returns 0.1 if recent).
     """
+    from services.hostel_config_service import get_config
+    config = await get_config(db)
     now = datetime.utcnow()
     # Check for recent no-show or late cancellation within penalty window
-    noshow_cutoff = now - timedelta(hours=settings.LAUNDRY_NOSHOW_PENALTY_HOURS)
+    noshow_cutoff = now - timedelta(hours=config.laundry_noshow_penalty_hours)
     noshow_result = await db.execute(
         select(LaundrySlot)
         .where(LaundrySlot.student_id == student_id)
@@ -79,18 +80,21 @@ async def calculate_priority_score(student_id: uuid.UUID, db: AsyncSession) -> f
 # Slot Generation
 # ---------------------------------------------------------------------------
 
-async def generate_daily_slots(slot_date: date, db: AsyncSession) -> None:
+async def generate_daily_slots(slot_date: date, db: AsyncSession, hostel_id=None) -> None:
     """
     Idempotent: generates slots for all operational machines if they don't already exist.
     Slot times run from LAUNDRY_SLOTS_START_HOUR to LAUNDRY_SLOTS_END_HOUR.
     """
-    start = settings.LAUNDRY_SLOTS_START_HOUR
-    end = settings.LAUNDRY_SLOTS_END_HOUR
-    duration = settings.LAUNDRY_SLOT_DURATION_HOURS
+    from services.hostel_config_service import get_config
+    config = await get_config(db, hostel_id)
+    start = config.laundry_slots_start_hour
+    end = config.laundry_slots_end_hour
+    duration = config.laundry_slot_duration_hours
 
-    machines_result = await db.execute(
-        select(Machine).where(Machine.status == MachineStatus.operational)
-    )
+    machines_query = select(Machine).where(Machine.status == MachineStatus.operational)
+    if hostel_id is not None:
+        machines_query = machines_query.where(Machine.hostel_id == hostel_id)
+    machines_result = await db.execute(machines_query)
     machines = machines_result.scalars().all()
 
     for machine in machines:
@@ -108,6 +112,7 @@ async def generate_daily_slots(slot_date: date, db: AsyncSession) -> None:
                     slot_date=slot_date,
                     slot_time=slot_time,
                     booking_status=LaundrySlotStatus.available,
+                    hostel_id=hostel_id,
                 )
                 db.add(slot)
 
@@ -119,15 +124,18 @@ async def generate_daily_slots(slot_date: date, db: AsyncSession) -> None:
 # Slot Queries
 # ---------------------------------------------------------------------------
 
-async def get_available_slots(slot_date: date, db: AsyncSession) -> list[LaundrySlot]:
+async def get_available_slots(slot_date: date, db: AsyncSession, hostel_id=None) -> list[LaundrySlot]:
     """Returns available slots for the date, generating them first if needed."""
-    await generate_daily_slots(slot_date, db)
-    result = await db.execute(
+    await generate_daily_slots(slot_date, db, hostel_id=hostel_id)
+    query = (
         select(LaundrySlot)
         .where(LaundrySlot.slot_date == slot_date)
         .where(LaundrySlot.booking_status == LaundrySlotStatus.available)
         .order_by(LaundrySlot.machine_id, LaundrySlot.slot_time)
     )
+    if hostel_id is not None:
+        query = query.where(LaundrySlot.hostel_id == hostel_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -223,6 +231,8 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
         raise PermissionError("You can only cancel your own bookings")
 
     # Sprint 5: Late cancellation check — apply penalty if within deadline
+    from services.hostel_config_service import get_config
+    config = await get_config(db)
     penalty_applied = False
     student_id_before_cancel = slot.student_id
     if slot.slot_date and slot.slot_time and not is_staff:
@@ -234,7 +244,7 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
                 slot_start_hour, slot_start_min
             )
             minutes_until = (slot_datetime - datetime.utcnow()).total_seconds() / 60
-            if minutes_until < settings.LAUNDRY_CANCELLATION_DEADLINE_MINUTES:
+            if minutes_until < config.laundry_cancellation_deadline_minutes:
                 slot.late_cancellation_at = datetime.utcnow()
                 penalty_applied = True
                 logger.info(f"Late cancellation penalty applied for student {cancelled_by}: {minutes_until:.0f} min until slot")
@@ -258,7 +268,7 @@ async def cancel_slot(slot_id: uuid.UUID, cancelled_by: uuid.UUID, is_staff: boo
             await notify_user(
                 recipient_id=student_id_before_cancel,
                 title="Late Cancellation Penalty",
-                body=f"Your slot was cancelled within {settings.LAUNDRY_CANCELLATION_DEADLINE_MINUTES} minutes of start time. Your booking priority will be reduced for {settings.LAUNDRY_NOSHOW_PENALTY_HOURS} hours.",
+                body=f"Your slot was cancelled within {config.laundry_cancellation_deadline_minutes} minutes of start time. Your booking priority will be reduced for {config.laundry_noshow_penalty_hours} hours.",
                 notification_type=NotificationType.laundry_reminder,
                 db=db,
             )
@@ -293,19 +303,23 @@ async def mark_slot_complete(slot_id: uuid.UUID, completed_by: uuid.UUID, db: As
 # Machine Management
 # ---------------------------------------------------------------------------
 
-async def get_machine_status(db: AsyncSession) -> list[Machine]:
+async def get_machine_status(db: AsyncSession, hostel_id=None) -> list[Machine]:
     """Returns all machines with current status."""
-    result = await db.execute(select(Machine))
+    query = select(Machine)
+    if hostel_id is not None:
+        query = query.where(Machine.hostel_id == hostel_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
-async def create_machine(name: str, floor: int, db: AsyncSession) -> Machine:
+async def create_machine(name: str, floor: int, db: AsyncSession, hostel_id=None) -> Machine:
     """Creates a new machine. Warden only."""
     machine = Machine(
         name=name,
         floor=floor,
         status=MachineStatus.operational,
         is_active=True,
+        hostel_id=hostel_id,
     )
     db.add(machine)
     await db.commit()
@@ -385,6 +399,7 @@ async def report_machine_issue(
         body=f"Reported by user {reported_by}: {issue_description}",
         notification_type=NotificationType.machine_down,
         db=db,
+        hostel_id=machine.hostel_id,
     )
     await db.commit()
 
@@ -392,6 +407,7 @@ async def report_machine_issue(
         f"Machine {machine_id} reported issue by {reported_by}. "
         f"{cancelled_count} slots cancelled."
     )
+    await db.refresh(machine)
     return machine
 
 
@@ -399,7 +415,7 @@ async def report_machine_issue(
 # No-Show Detection (Sprint 5)
 # ---------------------------------------------------------------------------
 
-async def check_and_apply_noshow_penalties(db: AsyncSession) -> int:
+async def check_and_apply_noshow_penalties(db: AsyncSession, hostel_id=None) -> int:
     """
     Find booked slots whose date has passed and mark them as no_show.
     Sends a push-enabled notification to each affected student.
@@ -407,14 +423,19 @@ async def check_and_apply_noshow_penalties(db: AsyncSession) -> int:
     Called by Celery beat task hourly.
     """
     from services.notification_service import notify_user
+    from services.hostel_config_service import get_config
     from schemas.enums import NotificationType
 
+    config = await get_config(db, hostel_id)
     yesterday = date.today() - timedelta(days=1)
-    result = await db.execute(
+    query = (
         select(LaundrySlot)
         .where(LaundrySlot.booking_status == LaundrySlotStatus.booked)
         .where(LaundrySlot.slot_date <= yesterday)
     )
+    if hostel_id is not None:
+        query = query.where(LaundrySlot.hostel_id == hostel_id)
+    result = await db.execute(query)
     slots = result.scalars().all()
 
     count = 0
@@ -430,7 +451,7 @@ async def check_and_apply_noshow_penalties(db: AsyncSession) -> int:
                 await notify_user(
                     recipient_id=slot.student_id,
                     title="Missed Laundry Slot",
-                    body=f"You missed your laundry slot on {slot.slot_date} ({slot.slot_time}). Your booking priority will be reduced for {settings.LAUNDRY_NOSHOW_PENALTY_HOURS} hours.",
+                    body=f"You missed your laundry slot on {slot.slot_date} ({slot.slot_time}). Your booking priority will be reduced for {config.laundry_noshow_penalty_hours} hours.",
                     notification_type=NotificationType.laundry_reminder,
                     db=db,
                 )

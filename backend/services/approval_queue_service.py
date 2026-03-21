@@ -41,17 +41,26 @@ async def get_pending_approvals(
     db: AsyncSession,
     limit: int = 20,
     offset: int = 0,
+    hostel_id=None,
 ) -> List[ApprovalQueueItem]:
     """
     Returns pending approval queue items sorted by created_at ascending, paginated.
+    Scoped to hostel_id when provided (via join with Complaint).
     """
-    result = await db.execute(
+    query = (
         select(ApprovalQueueItem)
         .where(ApprovalQueueItem.status == ApprovalStatus.pending)
         .order_by(ApprovalQueueItem.created_at.asc())
         .limit(limit)
         .offset(offset)
     )
+    if hostel_id is not None:
+        query = (
+            query
+            .join(Complaint, ApprovalQueueItem.complaint_id == Complaint.id)
+            .where(Complaint.hostel_id == hostel_id)
+        )
+    result = await db.execute(query)
     items = result.scalars().all()
     logger.info(f"[approval_queue] Found {len(items)} pending items")
     return items
@@ -271,6 +280,7 @@ async def escalate_complaint(
         ),
         notification_type=NotificationType.complaint_escalated,
         db=db,
+        hostel_id=complaint.hostel_id,
     )
 
     # Notify student if not anonymous

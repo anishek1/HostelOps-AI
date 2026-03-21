@@ -64,7 +64,7 @@ async def get_pending_approvals(
     current_user: User = Depends(require_role(*WARDEN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await aqs.get_pending_approvals(db, limit=limit, offset=offset)
+    items = await aqs.get_pending_approvals(db, limit=limit, offset=offset, hostel_id=current_user.hostel_id)
     return [
         ApprovalQueueItemRead(
             id=str(item.id),

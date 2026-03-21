@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(alembic revision:*)",
+      "Bash(alembic upgrade:*)",
+      "Bash(xargs grep:*)",
+      "Bash(ls:*)",
+      "Bash(.venv/Scripts/python -c \":*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}

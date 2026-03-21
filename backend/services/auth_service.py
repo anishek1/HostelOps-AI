@@ -333,8 +333,23 @@ async def register_user(payload, db: AsyncSession):
 
 async def login_user(payload, db: AsyncSession, ip_address: str | None = None):
     from schemas.auth import Token
+    from models.hostel import Hostel
+
+    # Sprint 7: resolve hostel_code → hostel_id for multi-tenant login isolation
+    hostel_result = await db.execute(
+        select(Hostel).where(Hostel.code == payload.hostel_code)
+    )
+    hostel = hostel_result.scalar_one_or_none()
+    if not hostel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hostel not found. Please check your hostel code.",
+        )
+
     result = await db.execute(
-        select(User).where(User.room_number == payload.room_number)
+        select(User)
+        .where(User.room_number == payload.room_number)
+        .where(User.hostel_id == hostel.id)
     )
     user = result.scalar_one_or_none()
 

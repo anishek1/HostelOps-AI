@@ -34,7 +34,7 @@ async def get_config(
     Return the current hostel operational configuration.
     Any authenticated user may read this (students need it too for display).
     """
-    config = await hostel_config_service.get_config(db)
+    config = await hostel_config_service.get_config(db, hostel_id=current_user.hostel_id)
     return HostelConfigRead.model_validate(config)
 
 
@@ -54,6 +54,6 @@ async def update_config(
     if not update_dict:
         raise HTTPException(status_code=400, detail="No fields to update provided.")
 
-    config = await hostel_config_service.update_config(update_dict, db)
+    config = await hostel_config_service.update_config(update_dict, db, hostel_id=current_user.hostel_id)
     logger.info(f"Config updated by {current_user.role.value} ({current_user.id}): {list(update_dict.keys())}")
     return HostelConfigRead.model_validate(config)

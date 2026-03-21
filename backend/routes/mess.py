@@ -51,6 +51,7 @@ async def submit_feedback(
             timing=feedback.timing,
             comment=feedback.comment,
             db=db,
+            hostel_id=current_user.hostel_id,
         )
         return {"message": "Feedback submitted", "id": str(fb.id)}
     except ValueError as e:
@@ -67,7 +68,7 @@ async def get_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """Get feedback summary for a specific date and optional meal."""
-    summary = await mess_service.get_daily_summary(feedback_date, meal, db)
+    summary = await mess_service.get_daily_summary(feedback_date, meal, db, hostel_id=current_user.hostel_id)
     return summary
 
 
@@ -82,7 +83,7 @@ async def get_alerts(
     allowed = WARDEN_ROLES + [UserRole.mess_manager]
     if current_user.role not in allowed:
         raise HTTPException(status_code=403, detail="Access restricted to wardens and mess managers")
-    alerts = await mess_service.get_recent_alerts(db)
+    alerts = await mess_service.get_recent_alerts(db, hostel_id=current_user.hostel_id)
     return [MessAlertRead.model_validate(a) for a in alerts[offset:offset + limit]]
 
 

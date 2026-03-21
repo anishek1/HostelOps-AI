@@ -134,8 +134,17 @@ async def save_subscription(
     return sub
 
 
-async def remove_subscription(endpoint: str, db: AsyncSession) -> None:
-    """Delete a push subscription by endpoint URL."""
-    await db.execute(delete(PushSubscription).where(PushSubscription.endpoint == endpoint))
+async def remove_subscription(endpoint: str, user_id: str, db: AsyncSession) -> None:
+    """Delete a push subscription by endpoint URL. Verifies ownership before deleting."""
+    from fastapi import HTTPException
+    result = await db.execute(
+        select(PushSubscription).where(PushSubscription.endpoint == endpoint)
+    )
+    sub = result.scalar_one_or_none()
+    if sub is None:
+        return
+    if str(sub.user_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="Not authorized to remove this subscription.")
+    await db.execute(delete(PushSubscription).where(PushSubscription.id == sub.id))
     await db.commit()
     logger.info(f"Removed push subscription: {endpoint[:50]}...")

@@ -14,6 +14,7 @@ export default function Login() {
     const navigate = useNavigate();
     const [roomNumber, setRoomNumber] = useState('');
     const [password, setPassword] = useState('');
+    const [hostelCode, setHostelCode] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -28,7 +29,7 @@ export default function Login() {
         setError(null);
         setLoading(true);
         try {
-            await login({ room_number: roomNumber, password });
+            await login({ room_number: roomNumber, password, hostel_code: hostelCode });
             // After login, user and role are available — redirect based on role
             // We need to read fresh from auth context after state update
             // navigate() is called in the effect when user is set
@@ -60,6 +61,26 @@ export default function Login() {
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {/* Hostel Code */}
+                    <div className="space-y-1">
+                        <label
+                            htmlFor="hostel_code"
+                            className="block text-sm font-medium text-gray-700"
+                        >
+                            Hostel Code
+                        </label>
+                        <input
+                            id="hostel_code"
+                            type="text"
+                            autoComplete="organization"
+                            required
+                            value={hostelCode}
+                            onChange={(e) => setHostelCode(e.target.value)}
+                            placeholder="e.g. BH1"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+
                     {/* Room Number */}
                     <div className="space-y-1">
                         <label

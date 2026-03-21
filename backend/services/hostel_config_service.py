@@ -20,14 +20,14 @@ from models.hostel_config import HostelConfig
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache: stores the single config object for 5 minutes to avoid repeated DB reads
-_config_cache: TTLCache = TTLCache(maxsize=1, ttl=300)
+# In-memory cache: keyed by hostel_id, 5-minute TTL, supports up to 100 hostels
+_config_cache: TTLCache = TTLCache(maxsize=100, ttl=300)
 
 
 def _build_fallback_config() -> HostelConfig:
     """Return a HostelConfig populated from .env settings (not persisted)."""
     return HostelConfig(
-        id=str(uuid.uuid4()),
+        id=uuid.uuid4(),
         hostel_name=settings.HOSTEL_NAME,
         hostel_mode=settings.HOSTEL_MODE,
         total_floors=settings.TOTAL_FLOORS,
@@ -47,36 +47,44 @@ def _build_fallback_config() -> HostelConfig:
     )
 
 
-async def get_config(db: AsyncSession) -> HostelConfig:
+async def get_config(db: AsyncSession, hostel_id=None) -> HostelConfig:
     """
-    Return the hostel config row.
-    Caches result for 5 minutes.
+    Return the hostel config row for the given hostel_id.
+    Caches result per hostel_id for 5 minutes.
     Falls back to .env-derived object if no DB row exists (not persisted).
     """
-    if "config" in _config_cache:
-        return _config_cache["config"]
+    cache_key = str(hostel_id) if hostel_id is not None else "__legacy__"
+    if cache_key in _config_cache:
+        return _config_cache[cache_key]
 
-    result = await db.execute(select(HostelConfig))
+    query = select(HostelConfig)
+    if hostel_id is not None:
+        query = query.where(HostelConfig.hostel_id == hostel_id)
+
+    result = await db.execute(query)
     config = result.scalar_one_or_none()
 
     if not config:
-        logger.warning("No hostel_config row found — using .env fallback values")
+        logger.warning(f"No hostel_config row found for hostel_id={hostel_id} — using .env fallback values")
         config = _build_fallback_config()
 
-    _config_cache["config"] = config
+    _config_cache[cache_key] = config
     return config
 
 
-async def update_config(updates: dict, db: AsyncSession) -> HostelConfig:
+async def update_config(updates: dict, db: AsyncSession, hostel_id=None) -> HostelConfig:
     """
     PATCH the hostel config row. Creates one if none exists.
     Invalidates the in-memory cache after update.
     """
-    result = await db.execute(select(HostelConfig))
+    query = select(HostelConfig)
+    if hostel_id is not None:
+        query = query.where(HostelConfig.hostel_id == hostel_id)
+    result = await db.execute(query)
     config = result.scalar_one_or_none()
 
     if not config:
-        config = HostelConfig(id=str(uuid.uuid4()))
+        config = HostelConfig(id=uuid.uuid4(), hostel_id=hostel_id)
         db.add(config)
         await db.flush()
         logger.info("Created new hostel_config row during update")
@@ -91,7 +99,8 @@ async def update_config(updates: dict, db: AsyncSession) -> HostelConfig:
     await db.refresh(config)
 
     # Invalidate cache so next read gets fresh data
-    _config_cache.pop("config", None)
+    cache_key = str(hostel_id) if hostel_id is not None else "__legacy__"
+    _config_cache.pop(cache_key, None)
     logger.info("Hostel config updated — cache invalidated")
     return config
 
@@ -111,7 +120,7 @@ async def seed_default_config(db: AsyncSession, hostel_id=None) -> HostelConfig 
         logger.info("hostel_config row already exists — skipping seed")
         return None
 
-    config = HostelConfig(id=str(uuid.uuid4()), hostel_id=hostel_id)
+    config = HostelConfig(id=uuid.uuid4(), hostel_id=hostel_id)
     db.add(config)
     await db.flush()
     logger.info(f"Seeded default hostel config row (hostel_id={hostel_id})")

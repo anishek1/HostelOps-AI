@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 async def verify_user_account(
     user_id: str,
     db: AsyncSession,
+    hostel_id=None,
 ) -> User:
     """
     Sets is_verified=True for a user.
@@ -41,7 +42,10 @@ async def verify_user_account(
             detail="Invalid user ID format.",
         )
 
-    result = await db.execute(select(User).where(User.id == uid))
+    query = select(User).where(User.id == uid)
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+    result = await db.execute(query)
     user = result.scalar_one_or_none()
 
     if not user:
@@ -66,6 +70,7 @@ async def verify_user_account(
 async def deactivate_user_account(
     user_id: str,
     db: AsyncSession,
+    hostel_id=None,
 ) -> User:
     """
     Sets is_active=False for a user.
@@ -80,7 +85,10 @@ async def deactivate_user_account(
             detail="Invalid user ID format.",
         )
 
-    result = await db.execute(select(User).where(User.id == uid))
+    query = select(User).where(User.id == uid)
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+    result = await db.execute(query)
     user = result.scalar_one_or_none()
 
     if not user:
@@ -101,7 +109,8 @@ async def reject_user(
     user_id: str,
     reason: str,
     warden_id: uuid.UUID,
-    db: AsyncSession
+    db: AsyncSession,
+    hostel_id=None,
 ) -> User:
     """
     Reject a pending student registration.
@@ -114,7 +123,10 @@ async def reject_user(
             detail="Invalid user ID format.",
         )
 
-    result = await db.execute(select(User).where(User.id == uid))
+    query = select(User).where(User.id == uid)
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+    result = await db.execute(query)
     user = result.scalar_one_or_none()
 
     if not user:
@@ -163,7 +175,8 @@ async def warden_reset_password(
     user_id: str,
     new_password: str,
     warden_id: uuid.UUID,
-    db: AsyncSession
+    db: AsyncSession,
+    hostel_id=None,
 ) -> User:
     """
     Force reset a user's password and log them out of all devices.
@@ -176,7 +189,10 @@ async def warden_reset_password(
             detail="Invalid user ID format.",
         )
 
-    result = await db.execute(select(User).where(User.id == uid))
+    query = select(User).where(User.id == uid)
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+    result = await db.execute(query)
     user = result.scalar_one_or_none()
 
     if not user:
@@ -234,8 +250,11 @@ async def create_staff_account(
             detail=f"Cannot create account with role '{staff_data.role.value}' via staff endpoint."
         )
 
-    # Check if username/room_number exists
-    result = await db.execute(select(User).where(User.room_number == staff_data.room_number))
+    # Check if username/room_number exists (scoped to hostel)
+    room_q = select(User).where(User.room_number == staff_data.room_number)
+    if hostel_id is not None:
+        room_q = room_q.where(User.hostel_id == hostel_id)
+    result = await db.execute(room_q)
     existing = result.scalar_one_or_none()
     
     if existing:

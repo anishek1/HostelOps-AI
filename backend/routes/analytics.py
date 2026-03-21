@@ -41,7 +41,7 @@ async def get_dashboard_metrics(
     Return all evaluation metrics for the specified period.
     Includes drift alert if misclassification rate exceeds 25%.
     """
-    metrics = await metrics_service.get_full_dashboard_metrics(days, db)
+    metrics = await metrics_service.get_full_dashboard_metrics(days, db, hostel_id=current_user.hostel_id)
     logger.info(f"Dashboard metrics rendered for {current_user.role.value} — drift_alert={metrics.drift_alert}")
     return metrics
 
@@ -55,7 +55,7 @@ async def get_complaints_analytics(
     db: AsyncSession = Depends(get_db),
 ):
     """Complaint breakdown analytics."""
-    return await metrics_service.get_complaints_analytics(days, category, status, db)
+    return await metrics_service.get_complaints_analytics(days, category, status, db, hostel_id=current_user.hostel_id)
 
 
 @router.get("/mess", response_model=MessAnalytics)
@@ -67,7 +67,7 @@ async def get_mess_analytics(
     db: AsyncSession = Depends(get_db),
 ):
     """Mess feedback trend analytics."""
-    return await metrics_service.get_mess_analytics(days, db)
+    return await metrics_service.get_mess_analytics(days, db, hostel_id=current_user.hostel_id)
 
 
 @router.get("/laundry", response_model=LaundryAnalytics)
@@ -79,7 +79,7 @@ async def get_laundry_analytics(
     db: AsyncSession = Depends(get_db),
 ):
     """Laundry slot utilization analytics."""
-    return await metrics_service.get_laundry_analytics(days, db)
+    return await metrics_service.get_laundry_analytics(days, db, hostel_id=current_user.hostel_id)
 
 
 @router.get("/overrides")
@@ -90,16 +90,9 @@ async def get_override_logs(
     db: AsyncSession = Depends(get_db),
 ):
     """Recent AI override log entries."""
-    from sqlalchemy import select
-    from models.override_log import OverrideLog
-
-    result = await db.execute(
-        select(OverrideLog)
-        .order_by(OverrideLog.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+    logs = await metrics_service.get_override_logs(
+        db, limit=limit, offset=offset, hostel_id=current_user.hostel_id
     )
-    logs = result.scalars().all()
     return {
         "total": len(logs),
         "items": [

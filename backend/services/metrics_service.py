@@ -38,23 +38,30 @@ _COMPLAINT_CATEGORIES = ["mess", "laundry", "maintenance", "interpersonal", "cri
 # Individual metric helpers
 # ---------------------------------------------------------------------------
 
-async def get_misclassification_rate(days: int, db: AsyncSession) -> float:
+async def get_misclassification_rate(days: int, db: AsyncSession, hostel_id=None) -> float:
     """Overrides / total AI-classified complaints in rolling window."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    total_result = await db.execute(
+    total_q = (
         select(func.count(Complaint.id))
         .where(Complaint.created_at >= cutoff)
         .where(Complaint.classified_by == "llm")
     )
+    if hostel_id is not None:
+        total_q = total_q.where(Complaint.hostel_id == hostel_id)
+    total_result = await db.execute(total_q)
     total = total_result.scalar() or 0
     if total == 0:
         return 0.0
 
-    override_result = await db.execute(
-        select(func.count(OverrideLog.id))
-        .where(OverrideLog.created_at >= cutoff)
-    )
+    override_q = select(func.count(OverrideLog.id)).where(OverrideLog.created_at >= cutoff)
+    if hostel_id is not None:
+        override_q = (
+            override_q
+            .join(Complaint, OverrideLog.complaint_id == Complaint.id)
+            .where(Complaint.hostel_id == hostel_id)
+        )
+    override_result = await db.execute(override_q)
     overrides = override_result.scalar() or 0
 
     rate = overrides / total
@@ -62,88 +69,105 @@ async def get_misclassification_rate(days: int, db: AsyncSession) -> float:
     return round(rate, 4)
 
 
-async def get_override_rate_by_category(days: int, db: AsyncSession) -> Dict[str, float]:
+async def get_override_rate_by_category(days: int, db: AsyncSession, hostel_id=None) -> Dict[str, float]:
     """Per-category override rate."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     result = {}
 
     for cat in _COMPLAINT_CATEGORIES:
-        total_res = await db.execute(
+        total_q = (
             select(func.count(Complaint.id))
             .where(Complaint.created_at >= cutoff)
             .where(Complaint.category == cat)
             .where(Complaint.classified_by == "llm")
         )
+        if hostel_id is not None:
+            total_q = total_q.where(Complaint.hostel_id == hostel_id)
+        total_res = await db.execute(total_q)
         total = total_res.scalar() or 0
         if total == 0:
             result[cat] = 0.0
             continue
 
-        override_res = await db.execute(
+        override_q = (
             select(func.count(OverrideLog.id))
             .join(Complaint, OverrideLog.complaint_id == Complaint.id)
             .where(OverrideLog.created_at >= cutoff)
             .where(Complaint.category == cat)
         )
+        if hostel_id is not None:
+            override_q = override_q.where(Complaint.hostel_id == hostel_id)
+        override_res = await db.execute(override_q)
         overrides = override_res.scalar() or 0
         result[cat] = round(overrides / total, 4)
 
     return result
 
 
-async def get_false_high_severity_rate(days: int, db: AsyncSession) -> float:
+async def get_false_high_severity_rate(days: int, db: AsyncSession, hostel_id=None) -> float:
     """AI-classified high-severity complaints later downgraded by warden."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    total_res = await db.execute(
+    total_q = (
         select(func.count(Complaint.id))
         .where(Complaint.created_at >= cutoff)
         .where(Complaint.severity == "high")
         .where(Complaint.classified_by == "llm")
     )
+    if hostel_id is not None:
+        total_q = total_q.where(Complaint.hostel_id == hostel_id)
+    total_res = await db.execute(total_q)
     total = total_res.scalar() or 0
     if total == 0:
         return 0.0
 
-    # Overrides where original severity was high — any override counts as downgrade
-    downgrade_res = await db.execute(
+    downgrade_q = (
         select(func.count(OverrideLog.id))
         .join(Complaint, OverrideLog.complaint_id == Complaint.id)
         .where(OverrideLog.created_at >= cutoff)
         .where(Complaint.severity == "high")
     )
+    if hostel_id is not None:
+        downgrade_q = downgrade_q.where(Complaint.hostel_id == hostel_id)
+    downgrade_res = await db.execute(downgrade_q)
     downgrades = downgrade_res.scalar() or 0
     return round(downgrades / total, 4)
 
 
-async def get_resolution_confirmation_rate(days: int, db: AsyncSession) -> float:
+async def get_resolution_confirmation_rate(days: int, db: AsyncSession, hostel_id=None) -> float:
     """Student-confirmed resolutions / total resolved complaints."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    total_res = await db.execute(
+    total_q = (
         select(func.count(Complaint.id))
         .where(Complaint.updated_at >= cutoff)
         .where(Complaint.status == ComplaintStatus.RESOLVED)
     )
+    if hostel_id is not None:
+        total_q = total_q.where(Complaint.hostel_id == hostel_id)
+    total_res = await db.execute(total_q)
     total = total_res.scalar() or 0
     if total == 0:
         return 0.0
 
-    confirmed_res = await db.execute(
+    confirmed_q = (
         select(func.count(Complaint.id))
         .where(Complaint.updated_at >= cutoff)
         .where(Complaint.status == ComplaintStatus.RESOLVED)
         .where(Complaint.resolved_confirmed_at.isnot(None))
     )
+    if hostel_id is not None:
+        confirmed_q = confirmed_q.where(Complaint.hostel_id == hostel_id)
+    confirmed_res = await db.execute(confirmed_q)
     confirmed = confirmed_res.scalar() or 0
     return round(confirmed / total, 4)
 
 
-async def get_avg_approval_queue_latency(days: int, db: AsyncSession) -> float:
+async def get_avg_approval_queue_latency(days: int, db: AsyncSession, hostel_id=None) -> float:
     """Average minutes from queue item creation to review."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    result = await db.execute(
+    q = (
         select(
             func.avg(
                 func.extract(
@@ -152,48 +176,62 @@ async def get_avg_approval_queue_latency(days: int, db: AsyncSession) -> float:
                 ) / 60
             )
         )
+        .join(Complaint, ApprovalQueueItem.complaint_id == Complaint.id)
         .where(ApprovalQueueItem.created_at >= cutoff)
         .where(ApprovalQueueItem.reviewed_at.isnot(None))
     )
+    if hostel_id is not None:
+        q = q.where(Complaint.hostel_id == hostel_id)
+    result = await db.execute(q)
     avg = result.scalar()
     return round(float(avg), 2) if avg else 0.0
 
 
-async def get_mess_participation_rate(db: AsyncSession) -> float:
+async def get_mess_participation_rate(db: AsyncSession, hostel_id=None) -> float:
     """Today's unique feedback submitters / total active students."""
     from datetime import date
     today = date.today()
 
-    total_res = await db.execute(
-        select(func.count(User.id)).where(User.role == "student").where(User.is_active == True)  # noqa: E712
-    )
+    total_q = select(func.count(User.id)).where(User.role == "student").where(User.is_active == True)  # noqa: E712
+    if hostel_id is not None:
+        total_q = total_q.where(User.hostel_id == hostel_id)
+    total_res = await db.execute(total_q)
     total_students = total_res.scalar() or 1
 
-    participants_res = await db.execute(
+    participants_q = (
         select(func.count(func.distinct(MessFeedback.student_id)))
         .where(MessFeedback.date == today)
     )
+    if hostel_id is not None:
+        participants_q = participants_q.where(MessFeedback.hostel_id == hostel_id)
+    participants_res = await db.execute(participants_q)
     participants = participants_res.scalar() or 0
     return round(participants / total_students, 4)
 
 
-async def get_laundry_noshow_rate(days: int, db: AsyncSession) -> float:
+async def get_laundry_noshow_rate(days: int, db: AsyncSession, hostel_id=None) -> float:
     """No-show slots / total booked slots in the period."""
     from datetime import date, timedelta as td
     cutoff = date.today() - td(days=days)
 
-    total_res = await db.execute(
+    total_q = (
         select(func.count(LaundrySlot.id))
         .where(LaundrySlot.booked_at.isnot(None))
         .where(LaundrySlot.slot_date >= cutoff)
     )
+    if hostel_id is not None:
+        total_q = total_q.where(LaundrySlot.hostel_id == hostel_id)
+    total_res = await db.execute(total_q)
     total = total_res.scalar() or 1
 
-    noshow_res = await db.execute(
+    noshow_q = (
         select(func.count(LaundrySlot.id))
         .where(LaundrySlot.booking_status == LaundrySlotStatus.no_show)
         .where(LaundrySlot.slot_date >= cutoff)
     )
+    if hostel_id is not None:
+        noshow_q = noshow_q.where(LaundrySlot.hostel_id == hostel_id)
+    noshow_res = await db.execute(noshow_q)
     noshows = noshow_res.scalar() or 0
     return round(noshows / total, 4)
 
@@ -202,28 +240,35 @@ async def get_laundry_noshow_rate(days: int, db: AsyncSession) -> float:
 # Sprint 6: Pending counts and Analytics
 # ---------------------------------------------------------------------------
 
-async def get_pending_registrations_count(db: AsyncSession) -> int:
+async def get_pending_registrations_count(db: AsyncSession, hostel_id=None) -> int:
     """Non-verified, non-rejected student accounts."""
-    result = await db.execute(
+    q = (
         select(func.count(User.id))
         .where(User.role == "student")
         .where(User.is_verified == False)
         .where(User.is_rejected == False)
     )
+    if hostel_id is not None:
+        q = q.where(User.hostel_id == hostel_id)
+    result = await db.execute(q)
     return result.scalar() or 0
 
 
-async def get_pending_approval_queue_count(db: AsyncSession) -> int:
+async def get_pending_approval_queue_count(db: AsyncSession, hostel_id=None) -> int:
     """Pending items in approval queue."""
-    result = await db.execute(
-        select(func.count(ApprovalQueueItem.id))
-        .where(ApprovalQueueItem.status == "pending")
-    )
+    q = select(func.count(ApprovalQueueItem.id)).where(ApprovalQueueItem.status == "pending")
+    if hostel_id is not None:
+        q = (
+            q
+            .join(Complaint, ApprovalQueueItem.complaint_id == Complaint.id)
+            .where(Complaint.hostel_id == hostel_id)
+        )
+    result = await db.execute(q)
     return result.scalar() or 0
 
 
 async def get_complaints_analytics(
-    days: int, category: str | None, status: str | None, db: AsyncSession
+    days: int, category: str | None, status: str | None, db: AsyncSession, hostel_id=None
 ) -> ComplaintsAnalytics:
     cutoff = datetime.utcnow() - timedelta(days=days)
     
@@ -232,6 +277,8 @@ async def get_complaints_analytics(
         base_query = base_query.where(Complaint.category == category)
     if status:
         base_query = base_query.where(Complaint.status == status)
+    if hostel_id is not None:
+        base_query = base_query.where(Complaint.hostel_id == hostel_id)
 
     result = await db.execute(base_query)
     complaints = result.scalars().all()
@@ -261,8 +308,8 @@ async def get_complaints_analytics(
             fallback_count += 1
 
         # Resolution time
-        if c.status == ComplaintStatus.RESOLVED and c.resolved_at:
-            hours = (c.resolved_at - c.created_at).total_seconds() / 3600
+        if c.status == ComplaintStatus.RESOLVED:
+            hours = (c.updated_at - c.created_at).total_seconds() / 3600
             total_hours += hours
             resolved_count += 1
 
@@ -281,13 +328,14 @@ async def get_complaints_analytics(
     )
 
 
-async def get_mess_analytics(days: int, db: AsyncSession) -> MessAnalytics:
+async def get_mess_analytics(days: int, db: AsyncSession, hostel_id=None) -> MessAnalytics:
     from datetime import date, timedelta as td
     cutoff = date.today() - td(days=days)
 
-    result = await db.execute(
-        select(MessFeedback).where(MessFeedback.date >= cutoff)
-    )
+    mess_q = select(MessFeedback).where(MessFeedback.date >= cutoff)
+    if hostel_id is not None:
+        mess_q = mess_q.where(MessFeedback.hostel_id == hostel_id)
+    result = await db.execute(mess_q)
     feedback_list = result.scalars().all()
 
     daily_counts = {}
@@ -338,15 +386,18 @@ async def get_mess_analytics(days: int, db: AsyncSession) -> MessAnalytics:
     )
 
 
-async def get_laundry_analytics(days: int, db: AsyncSession) -> LaundryAnalytics:
+async def get_laundry_analytics(days: int, db: AsyncSession, hostel_id=None) -> LaundryAnalytics:
     from datetime import date, timedelta as td
     cutoff = date.today() - td(days=days)
 
-    result = await db.execute(
+    laundry_q = (
         select(LaundrySlot)
         .where(LaundrySlot.slot_date >= cutoff)
         .where(LaundrySlot.booked_at.isnot(None))
     )
+    if hostel_id is not None:
+        laundry_q = laundry_q.where(LaundrySlot.hostel_id == hostel_id)
+    result = await db.execute(laundry_q)
     slots = result.scalars().all()
 
     total_bookings = len(slots)
@@ -368,23 +419,42 @@ async def get_laundry_analytics(days: int, db: AsyncSession) -> LaundryAnalytics
 
 
 # ---------------------------------------------------------------------------
+# Override log listing (Fix 15: moved from route)
+# ---------------------------------------------------------------------------
+
+async def get_override_logs(db: AsyncSession, limit: int = 20, offset: int = 0, hostel_id=None):
+    """Returns paginated override log entries, scoped to hostel_id."""
+    from sqlalchemy import select
+    from models.override_log import OverrideLog
+    q = select(OverrideLog).order_by(OverrideLog.created_at.desc()).limit(limit).offset(offset)
+    if hostel_id is not None:
+        q = (
+            q
+            .join(Complaint, OverrideLog.complaint_id == Complaint.id)
+            .where(Complaint.hostel_id == hostel_id)
+        )
+    result = await db.execute(q)
+    return result.scalars().all()
+
+
+# ---------------------------------------------------------------------------
 # Aggregated dashboard
 # ---------------------------------------------------------------------------
 
-async def get_full_dashboard_metrics(days: int, db: AsyncSession) -> DashboardMetrics:
+async def get_full_dashboard_metrics(days: int, db: AsyncSession, hostel_id=None) -> DashboardMetrics:
     """Compute all evaluation metrics and return a DashboardMetrics object."""
     logger.info(f"Computing dashboard metrics for last {days} days")
 
-    misclassification = await get_misclassification_rate(days, db)
-    override_by_cat = await get_override_rate_by_category(days, db)
-    false_high = await get_false_high_severity_rate(days, db)
-    confirmation = await get_resolution_confirmation_rate(days, db)
-    latency = await get_avg_approval_queue_latency(days, db)
-    mess_participation = await get_mess_participation_rate(db)
-    laundry_noshow = await get_laundry_noshow_rate(days, db)
-    
-    pending_reg = await get_pending_registrations_count(db)
-    pending_appr = await get_pending_approval_queue_count(db)
+    misclassification = await get_misclassification_rate(days, db, hostel_id)
+    override_by_cat = await get_override_rate_by_category(days, db, hostel_id)
+    false_high = await get_false_high_severity_rate(days, db, hostel_id)
+    confirmation = await get_resolution_confirmation_rate(days, db, hostel_id)
+    latency = await get_avg_approval_queue_latency(days, db, hostel_id)
+    mess_participation = await get_mess_participation_rate(db, hostel_id)
+    laundry_noshow = await get_laundry_noshow_rate(days, db, hostel_id)
+
+    pending_reg = await get_pending_registrations_count(db, hostel_id)
+    pending_appr = await get_pending_approval_queue_count(db, hostel_id)
 
     drift_alert = misclassification > 0.25
     if drift_alert:

@@ -6,7 +6,7 @@ Pydantic v2 schemas for the ApprovalQueueItem entity.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from schemas.enums import ApprovalStatus, ComplaintCategory, ComplaintSeverity
 
@@ -24,7 +24,7 @@ class ApprovalQueueItemRead(BaseModel):
     complaint_id: str
     ai_suggested_category: ComplaintCategory
     ai_suggested_severity: ComplaintSeverity
-    ai_suggested_assignee: str
+    ai_suggested_assignee: str | None
     confidence_score: float
     status: ApprovalStatus
     reviewed_by: str | None
@@ -33,3 +33,8 @@ class ApprovalQueueItemRead(BaseModel):
     reviewed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('id', 'complaint_id', 'ai_suggested_assignee', 'reviewed_by', mode='before')
+    @classmethod
+    def uuid_to_str(cls, v):
+        return str(v) if v is not None else None

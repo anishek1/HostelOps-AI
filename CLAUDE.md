@@ -81,6 +81,8 @@ Every file in `tools/` must follow this pattern: typed `Input` Pydantic model + 
 10. **UUID → str `field_validator`**: every Pydantic schema that validates a SQLAlchemy ORM object must convert UUID fields to str with `mode='before'`.
 11. **Every new PostgreSQL enum value needs an Alembic migration** before being used in code.
 12. **Analytics queries must handle NULL enum fields** — always check `if field is not None` before calling `.value`.
+13. **Login must include hostel_code.** Room numbers are not globally unique — hostel_id scoping on login is mandatory. Never allow login by room_number alone.
+14. **User management endpoints return 404 (not 403) for cross-hostel users.** Returning 403 would confirm the user exists in another hostel.
 
 ### Authentication flow
 
@@ -112,7 +114,7 @@ Assistant wardens approve new student registrations (or reject with reason). Stu
 
 ### Current sprint & known deviations
 
-**Current sprint: Sprint 7 — Multi-tenant architecture.** After Sprint 7, every DB query must filter by `hostel_id`. A user from hostel A must never see hostel B's data.
+**Current sprint: Sprint F — React PWA Frontend.** Backend is feature-complete and fully audited. Sprints 7 and 7b are done. A full production audit (2 rounds, 31 fixes) confirmed hostel_id isolation across all queries. Every DB query must filter by `hostel_id`. A user from hostel A must never see hostel B's data.
 
 **Critical field name deviations from what you might expect** (these have caused bugs before):
 

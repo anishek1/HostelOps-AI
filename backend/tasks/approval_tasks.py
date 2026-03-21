@@ -17,65 +17,10 @@ from schemas.enums import (
     NotificationType,
     UserRole,
 )
-from services.complaint_service import VALID_TRANSITIONS
-
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Sync helpers (same pattern as complaint_tasks.py)
-# ---------------------------------------------------------------------------
-
-
-def _transition_complaint_sync(
-    complaint_id: str,
-    from_state: ComplaintStatus,
-    to_state: ComplaintStatus,
-    triggered_by: str,
-    session,
-    note: str = "",
-):
-    """Sync version of transition_complaint for Celery tasks."""
-    from sqlalchemy import select
-    from models.complaint import Complaint
-    from models.audit_log import AuditLog
-
-    allowed = VALID_TRANSITIONS.get(from_state, [])
-    if to_state not in allowed:
-        raise ValueError(f"Invalid transition: {from_state.value} → {to_state.value}")
-
-    complaint = session.execute(
-        select(Complaint).where(Complaint.id == uuid.UUID(complaint_id))
-    ).scalar_one_or_none()
-    if not complaint:
-        raise ValueError(f"Complaint {complaint_id} not found")
-
-    complaint.status = to_state
-    actor_id = complaint.student_id
-    action_note = f" | {note}" if note else ""
-    log_entry = AuditLog(
-        user_id=actor_id,
-        action=f"TRANSITION:{from_state.value}→{to_state.value}{action_note}",
-        entity_type="complaint",
-        entity_id=str(complaint_id),
-        ip_address="0.0.0.0",
-    )
-    session.add(log_entry)
-    session.flush()
-    return complaint
-
-
-def _create_notification_sync(recipient_id, title, body, notification_type, session):
-    """Write a notification record synchronously."""
-    from models.notification import Notification
-    notification = Notification(
-        recipient_id=recipient_id,
-        title=title,
-        body=body,
-        type=notification_type,
-    )
-    session.add(notification)
-    session.flush()
+# Import shared sync helpers from complaint_tasks to avoid duplication (Fix 12)
+from tasks.complaint_tasks import _transition_complaint_sync, _create_notification_sync  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -143,14 +88,15 @@ def check_approval_timeouts():
                     item.status = ApprovalStatus.timed_out
                     session.flush()
 
-                    # Notify wardens about the timeout
+                    # Notify wardens about the timeout — scoped to complaint's hostel
                     from models.user import User
-                    wardens = session.execute(
-                        select(User).where(
-                            User.role.in_([UserRole.warden, UserRole.chief_warden]),
-                            User.is_active == True,  # noqa: E712
-                        )
-                    ).scalars().all()
+                    warden_q = select(User).where(
+                        User.role.in_([UserRole.warden, UserRole.chief_warden]),
+                        User.is_active == True,  # noqa: E712
+                    )
+                    if complaint.hostel_id is not None:
+                        warden_q = warden_q.where(User.hostel_id == complaint.hostel_id)
+                    wardens = session.execute(warden_q).scalars().all()
                     for warden in wardens:
                         _create_notification_sync(
                             recipient_id=warden.id,

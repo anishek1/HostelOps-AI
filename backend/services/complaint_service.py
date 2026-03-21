@@ -563,6 +563,7 @@ async def student_reopen_complaint(
             ),
             notification_type=NotificationType.complaint_reopened,
             db=db,
+            hostel_id=complaint.hostel_id,
         )
     except Exception:
         pass  # Notification failure is non-critical

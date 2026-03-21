@@ -22,6 +22,7 @@ class TokenData(BaseModel):
 class LoginRequest(BaseModel):
     room_number: str
     password: str
+    hostel_code: str
 
 
 class LoginResponse(BaseModel):

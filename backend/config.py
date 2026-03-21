@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     GROQ_API_KEY: str = ""
-    GROQ_MODEL_NAME: str = "llama3-8b-8192"
+    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
 
     # --- Task Queue ---
     CELERY_BROKER_URL: str = ""

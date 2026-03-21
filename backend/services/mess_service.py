@@ -15,7 +15,6 @@ from typing import Optional
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import settings
 from models.mess_alert import MessAlert
 from models.mess_feedback import MessFeedback
 from models.user import User
@@ -40,6 +39,7 @@ async def submit_feedback(
     timing: int,
     comment: Optional[str],
     db: AsyncSession,
+    hostel_id=None,
 ) -> MessFeedback:
     """
     Saves 5-dimension feedback. One submission per student per meal per date.
@@ -65,6 +65,7 @@ async def submit_feedback(
         menu_variety=menu_variety,
         timing=timing,
         comment=comment,
+        hostel_id=hostel_id,
     )
     db.add(feedback)
 
@@ -94,11 +95,14 @@ async def get_daily_summary(
     feedback_date: date,
     meal: Optional[MealPeriod],
     db: AsyncSession,
+    hostel_id=None,
 ) -> MessSummaryResponse:
     """Computes average scores across all 5 dimensions for a date and optional meal."""
     query = select(MessFeedback).where(MessFeedback.date == feedback_date)
     if meal:
         query = query.where(MessFeedback.meal == meal)
+    if hostel_id is not None:
+        query = query.where(MessFeedback.hostel_id == hostel_id)
 
     result = await db.execute(query)
     feedbacks = result.scalars().all()
@@ -133,6 +137,8 @@ async def get_daily_summary(
     )
     if meal:
         prev_query = prev_query.where(MessFeedback.meal == meal)
+    if hostel_id is not None:
+        prev_query = prev_query.where(MessFeedback.hostel_id == hostel_id)
     prev_result = await db.execute(prev_query)
     prev_feedbacks = prev_result.scalars().all()
 
@@ -166,27 +172,30 @@ async def get_daily_summary(
 # Alert Logic
 # ---------------------------------------------------------------------------
 
-async def check_and_alert(feedback_date: date, db: AsyncSession) -> None:
+async def check_and_alert(feedback_date: date, db: AsyncSession, hostel_id=None) -> None:
     """
     Checks thresholds for each meal. Creates MessAlert records and sends notifications.
     Called by Celery task `analyze_daily_mess_feedback`.
     """
     from services.notification_service import notify_all_by_role
+    from services.hostel_config_service import get_config
+
+    config = await get_config(db, hostel_id)
 
     for meal in MealPeriod:
-        summary = await get_daily_summary(feedback_date, meal, db)
-        if summary.participation_count < settings.MESS_MIN_RESPONSES:
+        summary = await get_daily_summary(feedback_date, meal, db, hostel_id=hostel_id)
+        if summary.participation_count < config.mess_min_responses:
             logger.info(f"Skip alert for {meal.value} — only {summary.participation_count} responses")
             continue
 
         overall = summary.overall_avg
-        if overall < settings.MESS_CRITICAL_THRESHOLD:
+        if overall < config.mess_critical_threshold:
             alert_type = AlertType.chronic
-            threshold_msg = f"avg_overall < {settings.MESS_CRITICAL_THRESHOLD} (CRITICAL)"
+            threshold_msg = f"avg_overall < {config.mess_critical_threshold} (CRITICAL)"
             notify_roles = [UserRole.mess_manager, UserRole.warden]
-        elif overall < settings.MESS_ALERT_THRESHOLD:
+        elif overall < config.mess_alert_threshold:
             alert_type = AlertType.spike
-            threshold_msg = f"avg_overall < {settings.MESS_ALERT_THRESHOLD}"
+            threshold_msg = f"avg_overall < {config.mess_alert_threshold}"
             notify_roles = [UserRole.mess_manager]
         else:
             continue
@@ -207,6 +216,7 @@ async def check_and_alert(feedback_date: date, db: AsyncSession) -> None:
             meal=meal,
             average_score=overall,
             participation_count=summary.participation_count,
+            hostel_id=hostel_id,
         )
         db.add(alert)
         await db.commit()
@@ -221,22 +231,26 @@ async def check_and_alert(feedback_date: date, db: AsyncSession) -> None:
                 ),
                 notification_type=NotificationType.mess_alert,
                 db=db,
+                hostel_id=hostel_id,
             )
         await db.commit()
         logger.info(f"Mess alert created for {meal.value} on {feedback_date} — {threshold_msg}")
 
 
-async def check_participation_alert(db: AsyncSession) -> None:
+async def check_participation_alert(db: AsyncSession, hostel_id=None) -> None:
     """
     Checks if participation was below MESS_MIN_PARTICIPATION for 3 consecutive days.
     Notifies assistant_warden if so.
     """
     from services.notification_service import notify_all_by_role
+    from services.hostel_config_service import get_config
 
+    config = await get_config(db, hostel_id)
     today = date.today()
-    total_result = await db.execute(
-        select(func.count(User.id)).where(User.role == UserRole.student, User.is_active == True)  # noqa: E712
-    )
+    students_query = select(func.count(User.id)).where(User.role == UserRole.student, User.is_active == True)  # noqa: E712
+    if hostel_id is not None:
+        students_query = students_query.where(User.hostel_id == hostel_id)
+    total_result = await db.execute(students_query)
     total = total_result.scalar() or 0
     if total == 0:
         return
@@ -244,12 +258,13 @@ async def check_participation_alert(db: AsyncSession) -> None:
     low_days = 0
     for offset in range(1, 4):
         check_date = today - timedelta(days=offset)
-        count_result = await db.execute(
-            select(func.count(MessFeedback.id)).where(MessFeedback.date == check_date)
-        )
+        count_query = select(func.count(MessFeedback.id)).where(MessFeedback.date == check_date)
+        if hostel_id is not None:
+            count_query = count_query.where(MessFeedback.hostel_id == hostel_id)
+        count_result = await db.execute(count_query)
         submissions = count_result.scalar() or 0
         rate = submissions / total
-        if rate < settings.MESS_MIN_PARTICIPATION:
+        if rate < config.mess_min_participation:
             low_days += 1
         else:
             break  # not consecutive — stop count
@@ -260,10 +275,11 @@ async def check_participation_alert(db: AsyncSession) -> None:
             title="Low Mess Feedback Participation",
             body=(
                 f"Mess feedback participation has been below "
-                f"{settings.MESS_MIN_PARTICIPATION * 100:.0f}% for 3 consecutive days."
+                f"{config.mess_min_participation * 100:.0f}% for 3 consecutive days."
             ),
             notification_type=NotificationType.mess_alert,
             db=db,
+            hostel_id=hostel_id,
         )
         await db.commit()
         logger.info("Low participation alert sent to assistant_wardens")
@@ -273,14 +289,17 @@ async def check_participation_alert(db: AsyncSession) -> None:
 # Queries
 # ---------------------------------------------------------------------------
 
-async def get_recent_alerts(db: AsyncSession) -> list[MessAlert]:
+async def get_recent_alerts(db: AsyncSession, hostel_id=None) -> list[MessAlert]:
     """Returns all alerts from the past 7 days."""
     seven_days_ago = date.today() - timedelta(days=7)
-    result = await db.execute(
+    query = (
         select(MessAlert)
         .where(MessAlert.triggered_at >= func.cast(seven_days_ago, MessAlert.triggered_at.type))
         .order_by(MessAlert.triggered_at.desc())
     )
+    if hostel_id is not None:
+        query = query.where(MessAlert.hostel_id == hostel_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 

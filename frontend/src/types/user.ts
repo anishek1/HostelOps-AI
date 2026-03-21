@@ -50,4 +50,5 @@ export interface Token {
 export interface LoginRequest {
     room_number: string;
     password: string;
+    hostel_code: string;
 }

@@ -48,7 +48,7 @@ async def get_slots(
     db: AsyncSession = Depends(get_db),
 ):
     """Get all available laundry slots for a given date."""
-    slots = await laundry_service.get_available_slots(slot_date, db)
+    slots = await laundry_service.get_available_slots(slot_date, db, hostel_id=current_user.hostel_id)
     return [LaundrySlotRead.model_validate(s) for s in slots[offset:offset + limit]]
 
 
@@ -142,7 +142,7 @@ async def get_machines(
     db: AsyncSession = Depends(get_db),
 ):
     """Get all laundry machines with their current status."""
-    machines = await laundry_service.get_machine_status(db)
+    machines = await laundry_service.get_machine_status(db, hostel_id=current_user.hostel_id)
     return [MachineRead.model_validate(m) for m in machines]
 
 
@@ -180,5 +180,6 @@ async def create_machine(
         name=machine_data.name,
         floor=machine_data.floor,
         db=db,
+        hostel_id=current_user.hostel_id,
     )
     return MachineRead.model_validate(machine)

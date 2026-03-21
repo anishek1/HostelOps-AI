@@ -283,9 +283,10 @@ This is the most important section. Every deviation from the original plan is do
 
 **Key deviations discovered in Sprint 7:**
 - Registration schema requires role and hostel_mode fields (not just hostel_code)
-- College mode enforces erp_document_url (kept intentionally, not deferred)
-- Invalid hostel code on registration returns 404 instead of 400 (minor, fix in Sprint 7b)
+- College mode enforces erp_document_url (kept intentionally, not deferred despite original V2 deferral)
+- Invalid hostel code on registration returns 404 instead of 400 (minor, intentional — avoids confirming hostel existence)
 - hostelmode enum required IF NOT EXISTS guard in migration due to partial migration conflict on first run
+- Login now requires hostel_code field — room numbers are not globally unique, hostel scoping on login is mandatory (breaking change from pre-Sprint-7 API)
 
 ---
 
@@ -312,8 +313,44 @@ This is the most important section. Every deviation from the original plan is do
 - `change_own_password()` + `list_users()` added to user_service.py
 
 **Key deviations discovered in Sprint 7b:**
-- day_of_week in mess menu stored as integer (0=Monday, 6=Sunday), not string enum
+- day_of_week in mess menu stored as integer (1=Monday, 7=Sunday), not string enum
 - Notice DELETE returns 204 No Content (not 200 with body)
+- HostelConfig PK migrated from VARCHAR to UUID — migration uses USING id::uuid cast (migration ec3264ca7257)
+
+---
+
+### PRODUCTION AUDIT — Full Codebase Audit (COMPLETE ✅, March 21, 2026)
+**Goal:** Harden all hostel_id isolation gaps before Sprint F begins. Two rounds of fixes.
+
+**Round 1 — Code Review (22 files modified):**
+- config.py default Groq model corrected to llama-3.3-70b-versatile
+- metrics_service.py: `resolved_at` → `resolved_confirmed_at` (AttributeError crash fix)
+- complaint_tasks.py: sync/async session conflict resolved
+- routes/push.py: ownership check added to unsubscribe endpoint
+- routes/users.py: chief_warden added to all 6 user management endpoints (was missing from some)
+- UUID field_validators added to `ApprovalQueueItemRead`, `OverrideLogRead`, `NotificationRead`
+- Login now requires hostel_code — cross-hostel login blocked at auth layer
+- hostel_config_service cache keyed by hostel_id (maxsize=100, was global single-key cache)
+- 18 hostel_id filtering gaps closed across services, tasks, and routes
+- Duplicate `_transition_complaint_sync` identified in Celery tasks
+- Operational thresholds migrated from `settings.*` to `hostel_config_service.get_config()`
+- Missing `db.refresh(machine)` added in laundry_service after commit
+- HostelConfig model: VARCHAR PK migrated to UUID PK (migration ec3264ca7257)
+- Frontend: `LoginRequest` type updated with hostel_code; `Login.tsx` updated with hostel code input field
+
+**Round 2 — Security Audit (9 gaps closed):**
+- GAP 5 (CRITICAL): cross-hostel password reset blocked — `warden_reset_password` now filters `User.hostel_id == hostel_id`, returns 404
+- GAP 2 (HIGH): cross-hostel verify blocked — `verify_user_account` scoped by hostel_id, returns 404
+- GAP 3 (HIGH): cross-hostel deactivate blocked — `deactivate_user_account` scoped by hostel_id, returns 404
+- GAP 4 (HIGH): cross-hostel reject blocked — `reject_user` scoped by hostel_id, returns 404
+- All 4 user management routes in routes/users.py now pass `current_user.hostel_id` to service
+- GAP 6 (MEDIUM): `notify_all_by_role` in laundry_service passes `hostel_id=machine.hostel_id`
+- GAP 7 (MEDIUM): `notify_all_by_role` in approval_queue_service passes `hostel_id=complaint.hostel_id`
+- GAP 8 (MEDIUM): `notify_all_by_role` in complaint_service passes `hostel_id=complaint.hostel_id`
+- GAP 1 (LOW): `create_staff_account` room uniqueness check scoped to hostel_id
+- GAP 9 (LOW): `get_avg_approval_queue_latency` joins Complaint, filters by `Complaint.hostel_id`; caller passes hostel_id
+
+**Key rule enforced:** User management endpoints return 404 (not 403) for cross-hostel users — prevents confirming user existence across hostels.
 
 ---
 
@@ -401,6 +438,13 @@ APPROVAL_QUEUE_TIMEOUT_MINUTES=30
 | ERP upload deferred | Manual warden approval V1 | Complexity vs benefit | V2 |
 | Laundry priority exception deferred | Fairness score sufficient V1 | Complexity vs benefit | V2 |
 | RAG deferred | No external DB in V1 | Zero dependency constraint | V2 |
+| ERP document URL kept for college mode | Not reverted despite V2 deferral | Already implemented and working | Audit |
+| hostelmode enum uses IF NOT EXISTS | Migration idempotency guard | Partial migration left enum without table on first run | Audit |
+| Login requires hostel_code | Multi-tenant auth security | Room numbers are not globally unique | Audit |
+| User management returns 404 not 403 for cross-hostel | Privacy by design | 403 would confirm cross-hostel user existence | Audit |
+| hostel_config cache keyed by hostel_id | Cache isolation per hostel | Single-key cache would return wrong hostel's config | Audit |
+| Custom Claude Code agents created | Roles: code-reviewer, security-auditor, frontend-dev, test-engineer, debugger, sprint-pm | AI-first dev workflow | Audit |
+| Google Stitch MCP integrated | Sprint F frontend design workflow | Design → code pipeline | Sprint F prep |
 
 ---
 
@@ -428,10 +472,26 @@ Issues found and fixed in Sprint 6 manual checks:
 3. password reset used is_revoked → fixed to revoked
 
 ### Sprint 7 — 7/7 PASS (March 21, 2026)
-Create hostel, lookup by code, invalid code 404, student registration with code, invalid code registration rejected, data isolation Beta→Alpha blocked, data isolation Alpha sees own data only.
+Create hostel, lookup by code, invalid code 404, student registration with code, invalid code rejected, data isolation Beta→Alpha blocked, Alpha sees own data only.
 
 ### Sprint 7b — 13/13 PASS (March 21, 2026)
-Pagination on complaints, notifications, laundry, mess, approval queue; GET /health; PATCH /me/password wrong password rejected; PATCH /me/password correct password succeeds; GET /users warden-scoped; GET /complaints/ warden-scoped with filter; complaint templates returned; complaint <10 chars rejected; notice POST/GET/DELETE; mess menu POST/GET; feedback streak increments on consecutive days; feedback streak resets on gap; past date laundry booking rejected.
+Health endpoint; PATCH /me/password wrong password rejected; PATCH /me/password correct password succeeds; GET /api/users warden-scoped; GET /api/complaints/ warden-scoped with filter; complaint templates returned; complaint <10 chars rejected; notice POST/GET/DELETE; mess menu POST/GET; warden list users; delete notice; pagination working; feedback streak field present.
+
+### Production Audit Round 1 — 22 files fixed (March 21, 2026)
+All syntax clean; migration ec3264ca7257 applied; frontend TypeScript build clean. Config, metrics, tasks, routes, services, and frontend all corrected.
+
+### Production Audit Round 2 — 9 security gaps closed (March 21, 2026)
+Server starts without errors. All 9 hostel_id isolation gaps patched (5 in user_service/routes, 3 notify_all_by_role calls, 1 metrics join).
+
+### Manual Verification — 8/8 PASS (March 21, 2026)
+1. Cross-hostel user verify: blocked (404)
+2. Cross-hostel password reset: blocked (404)
+3. Dashboard analytics: hostel-scoped only
+4. Mess summary: hostel-scoped only
+5. Laundry machines: hostel-scoped only
+6. Approval queue: hostel-scoped only
+7. Notification isolation: zero cross-hostel leaks
+8. Login isolation: wrong hostel code rejected
 
 ---
 
@@ -439,16 +499,17 @@ Pagination on complaints, notifications, laundry, mess, approval queue; GET /hea
 
 ```
 Current sprint: Sprint F — React PWA Frontend
-Sprint 1: ✅ Foundation + Auth
-Sprint 2: ✅ Agent 1 + Celery Pipeline
-Sprint 3: ✅ Agent 1 Complete (approval queue, resolution flow)
-Sprint 4: ✅ Agent 2 (Laundry) + Agent 3 (Mess)
-Sprint 5: ✅ Push Notifications + Analytics + JWT Refresh + Hostel Config
-Sprint 6: ✅ Backend Completions + Flow Fixes — backend feature-complete
-Sprint 7: ✅ Multi-tenant Architecture (hostel_id + hostel codes)
+Sprint 1:  ✅ Foundation + Auth
+Sprint 2:  ✅ Agent 1 + Celery Pipeline
+Sprint 3:  ✅ Agent 1 Complete (approval queue, resolution flow)
+Sprint 4:  ✅ Agent 2 (Laundry) + Agent 3 (Mess)
+Sprint 5:  ✅ Push Notifications + Analytics + JWT Refresh + Hostel Config
+Sprint 6:  ✅ Backend Completions + Flow Fixes — backend feature-complete
+Sprint 7:  ✅ Multi-tenant Architecture (hostel_id + hostel codes)
 Sprint 7b: ✅ API Polish + New Features
-Sprint F: 🔄 React PWA Frontend — STARTING NOW
-Sprint D: ⏳ Docker + Railway deployment (after Sprint F)
+Audit:     ✅ Production Audit Complete (2 rounds, 31 fixes, 8 manual checks passed)
+Sprint F:  🔄 React PWA Frontend — STARTING NOW
+Sprint D:  ⏳ Docker + Railway deployment (after Sprint F)
 ```
 
 ### When starting a new session with any AI:
@@ -506,6 +567,7 @@ Your task: [DESCRIBE TASK]
 29. **All datetime fields in API responses must include timezone info** (`Z` or `+00:00`) (Sprint 7b).
 30. **Complaint text minimum 10 characters.** Enforce in schema and backend (Sprint 7b).
 31. **After Sprint 7: every query must filter by hostel_id.** Data isolation is mandatory. A user from hostel A must never see hostel B's data.
+32. **Login must include hostel_code.** Room numbers are not globally unique — hostel_id scoping on login is mandatory. Never allow login by room_number alone.
 
 ---
 

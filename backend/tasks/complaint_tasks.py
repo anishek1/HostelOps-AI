@@ -56,22 +56,23 @@ def _get_complaint_sync(complaint_id: str, session):
     return result.scalar_one_or_none()
 
 
-def _get_warden_sync(session):
-    """Return UUID of any active warden/assistant_warden for approval queue."""
+def _get_warden_sync(session, hostel_id=None):
+    """Return UUID of any active warden/assistant_warden for approval queue, scoped to hostel."""
     from sqlalchemy import select
     from models.user import User
     for role in (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden):
-        result = session.execute(
-            select(User).where(User.role == role, User.is_active == True)  # noqa: E712
-        )
+        q = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
+        if hostel_id is not None:
+            q = q.where(User.hostel_id == hostel_id)
+        result = session.execute(q)
         user = result.scalars().first()
         if user:
             return user.id
     return None
 
 
-def _find_assignee_sync(category: ComplaintCategory, session):
-    """Find a staff member to handle the complaint based on category."""
+def _find_assignee_sync(category: ComplaintCategory, session, hostel_id=None):
+    """Find a staff member to handle the complaint based on category, scoped to hostel."""
     from sqlalchemy import select
     from models.user import User
 
@@ -85,13 +86,14 @@ def _find_assignee_sync(category: ComplaintCategory, session):
     }
     target_roles = role_map.get(category, [UserRole.assistant_warden])
     for role in target_roles:
-        result = session.execute(
-            select(User).where(User.role == role, User.is_active == True)  # noqa: E712
-        )
+        q = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
+        if hostel_id is not None:
+            q = q.where(User.hostel_id == hostel_id)
+        result = session.execute(q)
         user = result.scalars().first()
         if user:
             return user.id
-    return _get_warden_sync(session)
+    return _get_warden_sync(session, hostel_id=hostel_id)
 
 
 def _update_complaint_sync(complaint_id: str, updates: dict, session):
@@ -158,17 +160,18 @@ def _create_notification_sync(recipient_id, title: str, body: str,
     session.flush()
 
 
-def _notify_wardens_flagged_input_sync(complaint_id: str, session):
+def _notify_wardens_flagged_input_sync(complaint_id: str, session, hostel_id=None):
     """Passive alert to all assistant wardens about flagged prompt injection."""
     try:
         from sqlalchemy import select
         from models.user import User
-        wardens = session.execute(
-            select(User).where(
-                User.role.in_([UserRole.assistant_warden, UserRole.warden]),
-                User.is_active == True,  # noqa: E712
-            )
-        ).scalars().all()
+        q = select(User).where(
+            User.role.in_([UserRole.assistant_warden, UserRole.warden]),
+            User.is_active == True,  # noqa: E712
+        )
+        if hostel_id is not None:
+            q = q.where(User.hostel_id == hostel_id)
+        wardens = session.execute(q).scalars().all()
         for warden in wardens:
             _create_notification_sync(
                 recipient_id=warden.id,
@@ -219,16 +222,18 @@ def classify_and_route_complaint(self, complaint_id: str):
                 return {"status": "error", "reason": "complaint_not_found"}
 
             # Step 2 — Send acknowledgement FIRST (before LLM)
-            from tools.complaint_tools import acknowledge_student_tool, AcknowledgeStudentInput
-
-            run_async(acknowledge_student_tool(
-                AcknowledgeStudentInput(
-                    complaint_id=complaint_id,
-                    student_id=str(complaint.student_id),
-                    is_anonymous=complaint.is_anonymous,
-                ),
-                db=session  # pass the sync session wrapped appropriately - the tool uses it transparently if it only adds/commits objects or we can let it run as a mock DB object
-            ))
+            # Use sync notification directly — acknowledge_student_tool is async and requires AsyncSession
+            if not complaint.is_anonymous:
+                _create_notification_sync(
+                    recipient_id=complaint.student_id,
+                    title="Complaint Received",
+                    body=(
+                        f"Your complaint (ID: {complaint_id[:8]}...) has been received "
+                        "and is being reviewed. You will be notified once it is assigned."
+                    ),
+                    notification_type=NotificationType.complaint_assigned,
+                    session=session,
+                )
             session.commit()
 
             # Step 3 — Try LLM classification
@@ -293,7 +298,7 @@ def classify_and_route_complaint(self, complaint_id: str):
 
             if needs_approval:
                 # Route to approval queue
-                warden_id = _get_warden_sync(session)
+                warden_id = _get_warden_sync(session, hostel_id=complaint.hostel_id)
                 if not warden_id:
                     logger.error(
                         "[classify_task] No warden found — complaint stays at INTAKE. "
@@ -343,9 +348,9 @@ def classify_and_route_complaint(self, complaint_id: str):
 
             else:
                 # Auto-assign
-                assignee_id = _find_assignee_sync(category, session)
+                assignee_id = _find_assignee_sync(category, session, hostel_id=complaint.hostel_id)
                 if not assignee_id:
-                    assignee_id = _get_warden_sync(session)
+                    assignee_id = _get_warden_sync(session, hostel_id=complaint.hostel_id)
                 if not assignee_id:
                     logger.error("[classify_task] No assignee found — falling back to approval queue.")
                     session.commit()
@@ -377,7 +382,7 @@ def classify_and_route_complaint(self, complaint_id: str):
 
             # Step 7 — Flagged injection alert
             if complaint.flagged_input:
-                _notify_wardens_flagged_input_sync(complaint_id, session)
+                _notify_wardens_flagged_input_sync(complaint_id, session, hostel_id=complaint.hostel_id)
 
             # Step 8 — Route to Agent 2 (Laundry) or Agent 3 (Mess) if applicable
             # We delay these tasks *before* commit but Celery's task_acks_late/track_started 
