@@ -42,12 +42,14 @@ WARDEN_ROLES = [UserRole.assistant_warden, UserRole.warden, UserRole.chief_warde
 @router.get("/slots", response_model=List[LaundrySlotRead])
 async def get_slots(
     slot_date: date = Query(..., description="Date in YYYY-MM-DD format"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all available laundry slots for a given date."""
     slots = await laundry_service.get_available_slots(slot_date, db)
-    return [LaundrySlotRead.model_validate(s) for s in slots]
+    return [LaundrySlotRead.model_validate(s) for s in slots[offset:offset + limit]]
 
 
 @router.post("/slots/book", response_model=LaundryBookingResponse)
@@ -102,12 +104,14 @@ async def cancel_slot(
 
 @router.get("/my-bookings", response_model=List[LaundrySlotRead])
 async def my_bookings(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get upcoming booked slots for the current student."""
     bookings = await laundry_service.get_student_bookings(current_user.id, db)
-    return [LaundrySlotRead.model_validate(b) for b in bookings]
+    return [LaundrySlotRead.model_validate(b) for b in bookings[offset:offset + limit]]
 
 
 @router.patch("/slots/{slot_id}/complete")

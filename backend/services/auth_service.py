@@ -266,6 +266,15 @@ async def register_user(payload, db: AsyncSession):
     from schemas.user import UserRead
     from schemas.enums import NotificationType
     from services.notification_service import notify_all_by_role
+    from services.hostel_service import get_hostel_by_code
+
+    # Sprint 7: Validate hostel code and resolve hostel_id
+    hostel = await get_hostel_by_code(payload.hostel_code, db)
+    if not hostel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid hostel code. Please check with your warden.",
+        )
 
     # Validate college-mode requirements
     if payload.hostel_mode.value == "college":
@@ -280,11 +289,12 @@ async def register_user(payload, db: AsyncSession):
                 detail="erp_document_url is required for college hostel mode.",
             )
 
-    # Check for duplicate room_number + role combination (optional guard)
+    # Check for duplicate room_number within the same hostel
     existing = await db.execute(
         select(User).where(
             User.room_number == payload.room_number,
             User.role == payload.role,
+            User.hostel_id == hostel.id,
             User.is_active == True,  # noqa: E712
         )
     )
@@ -304,29 +314,22 @@ async def register_user(payload, db: AsyncSession):
         erp_document_url=payload.erp_document_url,
         is_verified=False,
         is_active=True,
+        hostel_id=hostel.id,  # Sprint 7: link to hostel
     )
     db.add(user)
     await db.flush()  # Get the UUID assigned before notifications
 
-    # Notify all assistant wardens
+    # Notify all assistant wardens in this hostel
     await notify_all_by_role(
         role=UserRole.assistant_warden,
         title="New Registration Pending",
         body=f"Student '{payload.name}' (Room {payload.room_number}) has registered and requires verification.",
         notification_type=NotificationType.registration_pending,
         db=db,
+        hostel_id=hostel.id,
     )
 
-    return UserRead(
-        id=str(user.id),
-        name=user.name,
-        room_number=user.room_number,
-        role=user.role,
-        hostel_mode=user.hostel_mode,
-        is_verified=user.is_verified,
-        is_active=user.is_active,
-        created_at=user.created_at,
-    )
+    return UserRead.model_validate(user)
 
 async def login_user(payload, db: AsyncSession, ip_address: str | None = None):
     from schemas.auth import Token

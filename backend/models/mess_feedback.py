@@ -18,6 +18,9 @@ from sqlalchemy.sql import func
 from database import Base
 from schemas.enums import MealPeriod
 
+import uuid
+from typing import Optional
+
 
 class MessFeedback(Base):
     __tablename__ = "mess_feedback"
@@ -38,6 +41,10 @@ class MessFeedback(Base):
     menu_variety: Mapped[int] = mapped_column(Integer, nullable=False)
     timing: Mapped[int] = mapped_column(Integer, nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    # Sprint 7: Multi-tenant
+    hostel_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hostels.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

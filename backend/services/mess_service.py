@@ -43,6 +43,7 @@ async def submit_feedback(
 ) -> MessFeedback:
     """
     Saves 5-dimension feedback. One submission per student per meal per date.
+    Sprint 7b: Updates feedback_streak on the student's User record.
     Raises ValueError if duplicate detected.
     """
     existing = await db.execute(
@@ -66,6 +67,19 @@ async def submit_feedback(
         comment=comment,
     )
     db.add(feedback)
+
+    # Sprint 7b: Update feedback streak on the student record
+    student = await db.get(User, student_id)
+    if student:
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        if student.last_feedback_date == yesterday:
+            student.feedback_streak = (student.feedback_streak or 0) + 1
+        else:
+            student.feedback_streak = 1
+        student.last_feedback_date = today
+        db.add(student)
+
     await db.commit()
     await db.refresh(feedback)
     logger.info(f"Feedback submitted by {student_id} for {meal.value} on {feedback_date}")

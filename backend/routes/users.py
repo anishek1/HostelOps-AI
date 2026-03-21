@@ -5,18 +5,22 @@ User management routes: verify, deactivate, me.
 Routes are thin — all logic delegated to services.
 """
 
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.user import User
 from schemas.enums import UserRole
-from schemas.user import StaffCreate, StaffRead, UserRead
+from schemas.user import ChangePasswordRequest, StaffCreate, StaffRead, UserRead
 from services.auth_service import get_current_user, require_role
 from services.user_service import (
+    change_own_password,
     create_staff_account,
     deactivate_user_account,
+    list_users,
     reject_user,
     verify_user_account,
     warden_reset_password,
@@ -32,6 +36,34 @@ async def get_me(current_user: User = Depends(get_current_user)):
     Identity is extracted from the JWT bearer token.
     """
     return UserRead.model_validate(current_user)
+
+
+@router.get("", response_model=list[UserRead])
+async def get_users(
+    role: Optional[UserRole] = Query(None),
+    is_verified: Optional[bool] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None, description="Search by name or room number"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+):
+    """
+    List users in the warden's hostel with optional filters.
+    Requires warden role.
+    """
+    users = await list_users(
+        db=db,
+        hostel_id=warden.hostel_id,
+        role=role,
+        is_verified=is_verified,
+        is_active=is_active,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return [UserRead.model_validate(u) for u in users]
 
 
 @router.patch("/me/onboarding-seen", response_model=UserRead)
@@ -112,6 +144,25 @@ async def reset_user_password(
     return {"message": "Password reset successfully"}
 
 
+@router.patch("/me/password", response_model=UserRead)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Self-service password change. Requires current password verification.
+    Never uses passlib — uses verify_password from auth_service.
+    """
+    user = await change_own_password(
+        user_id=current_user.id,
+        current_password=payload.current_password,
+        new_password=payload.new_password,
+        db=db,
+    )
+    return UserRead.model_validate(user)
+
+
 @router.post("/staff", response_model=StaffRead, status_code=201)
 async def create_staff(
     payload: StaffCreate,
@@ -121,12 +172,14 @@ async def create_staff(
     """
     Create a pre-verified staff account.
     """
-    user = await create_staff_account(payload, warden.id, db)
+    user = await create_staff_account(payload, warden.id, db, hostel_id=warden.hostel_id)
     return StaffRead.model_validate(user)
 
 
 @router.get("/staff", response_model=list[StaffRead])
 async def list_staff(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden)),
 ):
@@ -134,13 +187,18 @@ async def list_staff(
     List all staff accounts.
     """
     from sqlalchemy import select
-    # Return all users who aren't students
-    result = await db.execute(
+    query = (
         select(User)
         .where(User.role != UserRole.student)
-        .where(User.is_active == True)
+        .where(User.is_active == True)  # noqa: E712
         .order_by(User.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
+    # Sprint 7: scope to warden's hostel
+    if warden.hostel_id is not None:
+        query = query.where(User.hostel_id == warden.hostel_id)
+    result = await db.execute(query)
     staff_members = result.scalars().all()
     return [StaffRead.model_validate(s) for s in staff_members]
 

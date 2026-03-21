@@ -4,13 +4,14 @@ models/user.py — HostelOps AI
 ================================
 SQLAlchemy ORM model for the User entity.
 Sprint 6: Added is_rejected, rejection_reason, has_seen_onboarding columns.
+Sprint 7b: Added feedback_streak, last_feedback_date columns.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -43,6 +44,13 @@ class User(Base):
     rejection_reason: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     # Sprint 6: Onboarding flag
     has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Sprint 7: Multi-tenant
+    hostel_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hostels.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Sprint 7b: Feedback streak
+    feedback_streak: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_feedback_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

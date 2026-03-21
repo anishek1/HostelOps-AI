@@ -158,6 +158,10 @@ async def book_slot(
     Books a slot. Enforces one-booking-per-day fairness rule.
     Raises ValueError on business rule violations.
     """
+    # Sprint 7b: Reject past-date bookings
+    if slot_date < date.today():
+        raise ValueError("Cannot book a slot in the past.")
+
     # Fairness: one booking per day
     existing = await db.execute(
         select(LaundrySlot)

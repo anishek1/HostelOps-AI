@@ -10,7 +10,8 @@ Sprint 5: Added to allow wardens to configure thresholds from UI.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID
 
 from database import Base
 
@@ -19,6 +20,8 @@ class HostelConfig(Base):
     __tablename__ = "hostel_config"
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    # Sprint 7: Multi-tenant — one config row per hostel
+    hostel_id = Column(UUID(as_uuid=True), ForeignKey("hostels.id", ondelete="CASCADE"), nullable=True, index=True)
     hostel_name = Column(String(255), nullable=False, default="Hostel")
     hostel_mode = Column(String(50), nullable=False, default="college")  # "college" | "autonomous"
     total_floors = Column(Integer, nullable=False, default=3)

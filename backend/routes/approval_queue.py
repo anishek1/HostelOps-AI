@@ -6,7 +6,7 @@ Routes are thin — all logic in services/approval_queue_service.py.
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -59,10 +59,12 @@ class EscalateRequest(BaseModel):
     summary="Get all pending approval queue items",
 )
 async def get_pending_approvals(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(require_role(*WARDEN_ROLES)),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await aqs.get_pending_approvals(db)
+    items = await aqs.get_pending_approvals(db, limit=limit, offset=offset)
     return [
         ApprovalQueueItemRead(
             id=str(item.id),

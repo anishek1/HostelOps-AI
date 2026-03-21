@@ -19,8 +19,15 @@ from schemas.enums import (
 
 
 class ComplaintCreate(BaseModel):
-    text: str = Field(..., max_length=1000)
+    text: str = Field(..., min_length=10, max_length=1000)
     is_anonymous: bool = False
+
+
+class ComplaintTemplateRead(BaseModel):
+    """Hardcoded complaint template for quick-fill on frontend."""
+    title: str
+    description: str
+    category: str
 
 
 class ComplaintRead(BaseModel):

@@ -73,6 +73,10 @@ class Complaint(Base):
     )
     reopen_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Sprint 7: Multi-tenant
+    hostel_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hostels.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

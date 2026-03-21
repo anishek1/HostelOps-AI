@@ -138,6 +138,11 @@ async def create_complaint(
     """
     sanitization = sanitize_input(data.text)
 
+    # Sprint 7: Inherit hostel_id from the student record
+    from models.user import User
+    student = await db.get(User, uuid.UUID(student_id))
+    hostel_id = student.hostel_id if student else None
+
     complaint = Complaint(
         student_id=uuid.UUID(student_id),
         text=sanitization.original_text,
@@ -147,6 +152,7 @@ async def create_complaint(
         flagged_input=sanitization.original_text if sanitization.was_flagged else None,
         classified_by=ClassifiedBy.fallback,  # Default; Celery task updates this
         requires_approval=False,
+        hostel_id=hostel_id,  # Sprint 7
     )
     db.add(complaint)
     await db.flush()  # Get the UUID
@@ -345,17 +351,19 @@ async def send_to_approval_queue(
 # Helper: find a warden to use as fallback assignee
 # ---------------------------------------------------------------------------
 
-async def get_fallback_warden_id(db: AsyncSession) -> Optional[uuid.UUID]:
+async def get_fallback_warden_id(db: AsyncSession, hostel_id=None) -> Optional[uuid.UUID]:
     """
     Returns the UUID of any active assistant_warden or warden.
+    Sprint 7: Scoped to hostel_id when provided.
     Used when routing to approval queue and no specific assignee is known.
     Returns None if no warden exists (run create_admin.py first).
     """
     from models.user import User
     for role in (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden):
-        result = await db.execute(
-            select(User).where(User.role == role, User.is_active == True)  # noqa: E712
-        )
+        query = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
+        if hostel_id is not None:
+            query = query.where(User.hostel_id == hostel_id)
+        result = await db.execute(query)
         user = result.scalars().first()
         if user:
             return user.id
@@ -573,11 +581,47 @@ async def student_reopen_complaint(
 async def get_my_complaints(
     student_id: str,
     db: AsyncSession,
+    limit: int = 20,
+    offset: int = 0,
 ) -> list[Complaint]:
-    """Returns all complaints filed by a student, newest first."""
+    """Returns complaints filed by a student, newest first, paginated."""
     result = await db.execute(
         select(Complaint)
         .where(Complaint.student_id == uuid.UUID(student_id))
         .order_by(Complaint.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
+    return result.scalars().all()
+
+
+async def list_complaints(
+    db: AsyncSession,
+    hostel_id=None,
+    complaint_status: Optional[ComplaintStatus] = None,
+    category: Optional[ComplaintCategory] = None,
+    severity: Optional[ComplaintSeverity] = None,
+    search: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[Complaint]:
+    """
+    Returns complaints for a hostel with optional filters, newest first.
+    Golden Rule 31: always scoped by hostel_id when provided.
+    """
+    query = select(Complaint).order_by(Complaint.created_at.desc())
+
+    if hostel_id is not None:
+        query = query.where(Complaint.hostel_id == hostel_id)
+    if complaint_status is not None:
+        query = query.where(Complaint.status == complaint_status)
+    if category is not None:
+        query = query.where(Complaint.category == category)
+    if severity is not None:
+        query = query.where(Complaint.severity == severity)
+    if search:
+        query = query.where(Complaint.text.ilike(f"%{search}%"))
+
+    query = query.limit(limit).offset(offset)
+    result = await db.execute(query)
     return result.scalars().all()

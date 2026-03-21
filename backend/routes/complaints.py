@@ -6,24 +6,25 @@ All business logic lives in services/complaint_service.py.
 LLM classification runs asynchronously via Celery — routes return immediately.
 """
 import logging
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
 
 from database import get_db
 from models.audit_log import AuditLog
 from models.user import User
-from schemas.complaint import ComplaintCreate, ComplaintRead, ComplaintReadAnonymous
-from schemas.enums import ComplaintStatus, UserRole
+from schemas.complaint import ComplaintCreate, ComplaintRead, ComplaintReadAnonymous, ComplaintTemplateRead
+from schemas.enums import ComplaintCategory, ComplaintSeverity, ComplaintStatus, UserRole
 from services.auth_service import get_current_user, require_role
 from services.complaint_service import (
     VALID_TRANSITIONS,
     create_complaint,
     get_complaint,
     get_my_complaints,
+    list_complaints,
     staff_update_progress,
     student_confirm_resolution,
     student_reopen_complaint,
@@ -171,6 +172,56 @@ async def file_complaint(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/complaints/ — warden list with filters
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/",
+    response_model=List[ComplaintRead],
+    summary="List all complaints in hostel (warden only)",
+)
+async def list_complaints_route(
+    complaint_status: Optional[ComplaintStatus] = Query(None, alias="status"),
+    category: Optional[ComplaintCategory] = Query(None),
+    severity: Optional[ComplaintSeverity] = Query(None),
+    search: Optional[str] = Query(None, description="Text search in complaint body"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_role(*WARDEN_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    complaints = await list_complaints(
+        db=db,
+        hostel_id=current_user.hostel_id,
+        complaint_status=complaint_status,
+        category=category,
+        severity=severity,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return [serialize_complaint(c, current_user) for c in complaints]
+
+
+# ---------------------------------------------------------------------------
+# GET /api/complaints/templates — hardcoded quick-fill templates
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/templates",
+    response_model=List[ComplaintTemplateRead],
+    summary="Get complaint quick-fill templates",
+)
+async def get_complaint_templates(
+    current_user: User = Depends(get_current_user),
+):
+    from services.complaint_template_service import get_templates
+    return get_templates()
+
+
+# ---------------------------------------------------------------------------
 # GET /api/complaints/my — student's own complaints
 # ---------------------------------------------------------------------------
 
@@ -181,10 +232,12 @@ async def file_complaint(
     summary="Get my complaints (student only)",
 )
 async def get_my_complaints_route(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
 ):
-    complaints = await get_my_complaints(str(current_user.id), db)
+    complaints = await get_my_complaints(str(current_user.id), db, limit=limit, offset=offset)
     return [serialize_complaint(c, current_user) for c in complaints]
 
 

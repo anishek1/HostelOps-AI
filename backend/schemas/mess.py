@@ -3,6 +3,7 @@ schemas/mess.py — HostelOps AI
 ==================================
 Pydantic schemas for mess feedback and alerts (Sprint 4).
 MessFeedback uses 5 dimension scores matching the existing DB model.
+Sprint 7b: Added MessMenuCreate, MessMenuRead.
 Field validators convert UUID → str per Golden Rule 17.
 """
 import logging
@@ -90,3 +91,32 @@ class MessSummaryResponse(BaseModel):
     overall_avg: float
     participation_count: int
     trend: str  # "improving", "declining", "stable"
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7b: Mess Menu schemas
+# ---------------------------------------------------------------------------
+
+class MessMenuCreate(BaseModel):
+    day_of_week: int = Field(..., ge=0, le=6, description="0=Monday, 6=Sunday")
+    meal: MealType
+    items: List[str] = Field(..., min_length=1)
+    valid_from: date
+
+
+class MessMenuRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    hostel_id: Optional[str] = None
+    day_of_week: int
+    meal: MealType
+    items: List[str]
+    valid_from: date
+    created_by: str
+    created_at: datetime
+
+    @field_validator("id", "hostel_id", "created_by", mode="before")
+    @classmethod
+    def uuid_to_str(cls, v):
+        return str(v) if v is not None else None

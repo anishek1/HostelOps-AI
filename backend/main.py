@@ -64,6 +64,8 @@ from routes.mess import router as mess_router        # noqa: E402
 from routes.hostel_config import router as hostel_config_router  # noqa: E402  Sprint 5
 from routes.push import router as push_router        # noqa: E402  Sprint 5
 from routes.analytics import router as analytics_router  # noqa: E402  Sprint 5
+from routes.hostels import router as hostels_router      # noqa: E402  Sprint 7
+from routes.notices import router as notices_router      # noqa: E402  Sprint 7b
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users_router, prefix="/api/users", tags=["Users"])
@@ -75,6 +77,8 @@ app.include_router(mess_router, prefix="/api/mess", tags=["Mess"])
 app.include_router(hostel_config_router, prefix="/api/config", tags=["Hostel Config"])  # Sprint 5
 app.include_router(push_router, prefix="/api/push", tags=["Push Notifications"])  # Sprint 5
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics"])  # Sprint 5
+app.include_router(hostels_router, prefix="/api/hostels", tags=["Hostels"])        # Sprint 7
+app.include_router(notices_router, prefix="/api/notices", tags=["Notices"])        # Sprint 7b
 
 
 # ---------------------------------------------------------------------------
@@ -83,4 +87,4 @@ app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics"]
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "ok", "service": "hostelops-ai"}
+    return {"status": "ok", "version": "1.0.0"}

@@ -7,7 +7,7 @@ Routes are thin — minimal logic, direct DB operations.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -34,6 +34,8 @@ router = APIRouter()
     summary="Get current user's notifications",
 )
 async def get_notifications(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -41,6 +43,8 @@ async def get_notifications(
         select(Notification)
         .where(Notification.recipient_id == current_user.id)
         .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     notifications = result.scalars().all()
     return [

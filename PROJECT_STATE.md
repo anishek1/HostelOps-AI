@@ -1,5 +1,5 @@
 # HostelOps AI — Project State Document & AI Onboarding Prompt
-# Version: Sprint 6 Complete — Sprint 7 Starting
+# Version: Sprint 7b Complete — Sprint F Starting
 # Last Updated: March 2026
 # Purpose: Single source of truth for the current project state.
 #          Paste into ANY AI assistant to instantly onboard it.
@@ -264,6 +264,59 @@ This is the most important section. Every deviation from the original plan is do
 
 ---
 
+### SPRINT 7 — Multi-tenant Architecture (COMPLETE ✅)
+**Goal:** One deployment serves multiple hostels. Every DB query scoped by hostel_id.
+
+**What was built:**
+- models/hostel.py: Hostel model (id, name, code, mode, total_floors, total_students_capacity, created_at)
+- hostel_id nullable FK added to: users, complaints, machines, laundry_slots, mess_feedback, mess_alerts, hostel_config
+- schemas/hostel.py: HostelSetupRequest, HostelRead, HostelPublicInfo, HostelSetupResponse
+- services/hostel_service.py: generate_unique_hostel_code() (XXXX-0000 format), create_hostel_with_warden(), get_hostel_by_code(), get_hostel_by_id()
+- routes/hostels.py: POST /api/hostels/setup (201), GET /api/hostels/{code}/info
+- auth_service.register_user(): validates hostel_code, links student to hostel, scopes notifications
+- hostel_config_service.seed_default_config(): accepts hostel_id, called from hostel_service on setup
+- notification_service.notify_all_by_role(): hostel_id param added, never notifies across hostels
+- user_service.create_staff_account(): hostel_id param added, inherited from creating warden
+- complaint_service: hostel_id stamped on new complaints, warden lookup scoped by hostel_id
+- routes/users.py list_staff: scoped to warden's hostel
+- Alembic migration: a1b2c3d4e5f6_sprint7_multi_tenant
+
+**Key deviations discovered in Sprint 7:**
+- Registration schema requires role and hostel_mode fields (not just hostel_code)
+- College mode enforces erp_document_url (kept intentionally, not deferred)
+- Invalid hostel code on registration returns 404 instead of 400 (minor, fix in Sprint 7b)
+- hostelmode enum required IF NOT EXISTS guard in migration due to partial migration conflict on first run
+
+---
+
+### SPRINT 7b — API Polish + New Features (COMPLETE ✅)
+**Goal:** Polish all list endpoints, add self-service user tools, and ship three new features before the React frontend sprint.
+
+**What was built:**
+- Pagination (limit/offset query params) on all list endpoints: notifications, complaints (list + my), laundry slots + my-bookings, mess alerts + my-feedback, approval queue, staff list
+- `GET /api/users` (warden only) — filter by role, is_verified, is_active, search; hostel_id scoped
+- `GET /api/complaints/` (warden only) — filter by status, category, severity, search text; hostel_id scoped
+- `PATCH /api/users/me/password` — self-service password change with current password verification; uses verify_password() never passlib
+- `GET /api/complaints/templates` — 9 hardcoded templates, no DB table, any authenticated user
+- `ComplaintCreate.text` min_length=10 enforced at schema level
+- `GET /health` returns `{"status": "ok", "version": "1.0.0"}`
+- Past date validation in laundry `book_slot` — 400 if slot_date < today
+- Notice board: `POST /api/notices`, `GET /api/notices`, `DELETE /api/notices/{id}` — hostel-scoped, WARDEN_ROLES for write
+- Mess menu: `POST /api/mess/menu`, `GET /api/mess/menu` — hostel-scoped, mess_manager or WARDEN_ROLES for write
+- Feedback streak: `feedback_streak` (int) + `last_feedback_date` (date) on User model; submit_feedback updates streak — consecutive days increment, else reset to 1; included in UserRead
+- `mealtype` PostgreSQL enum created via IF NOT EXISTS guard (same pattern as hostelmode)
+- Alembic migration: c57d21acb8ed_sprint7b_api_polish_and_features
+- New models: `models/mess_menu.py`, `models/notice.py`
+- New services: `mess_menu_service.py`, `notice_service.py`, `complaint_template_service.py`
+- New route file: `routes/notices.py`
+- `change_own_password()` + `list_users()` added to user_service.py
+
+**Key deviations discovered in Sprint 7b:**
+- day_of_week in mess menu stored as integer (0=Monday, 6=Sunday), not string enum
+- Notice DELETE returns 204 No Content (not 200 with body)
+
+---
+
 ## SECTION 6 — ENVIRONMENT VARIABLES
 
 ```env
@@ -336,10 +389,15 @@ APPROVAL_QUEUE_TIMEOUT_MINUTES=30
 | 30-second polling | Not WebSockets | Sufficient for V1, lower complexity | Decision |
 | Multi-tenant architecture | hostel_id on all tables | One deployment serves all hostels | Sprint 7 |
 | Hostel code registration | Student enters code from warden | Clean UX, no subdomain complexity | Sprint 7 |
+| ERP document URL kept for college mode | Not deferred despite original V2 plan | Already implemented and working, no reason to remove | Sprint 7 |
+| hostelmode enum IF NOT EXISTS | Migration guard for idempotency | Partial migration failure left enum in DB without hostels table | Sprint 7 |
 | Mess menu flexible | valid_from date, publish anytime | Hostels don't follow weekly schedules | Sprint 7b |
 | Notice board | Warden → all students | Replace WhatsApp group announcements | Sprint 7b |
 | Complaint templates | Quick pre-fill | Most complaints are repetitive | Sprint 7b |
 | Feedback streak | Counter on User model | Incentivises daily participation | Sprint 7b |
+| day_of_week as int | 0–6 in mess_menu | Simpler than string enum, easy to map on frontend | Sprint 7b |
+| Notice DELETE → 204 | No response body | REST convention for delete operations | Sprint 7b |
+| Complaint templates hardcoded | No DB table | Static content, no admin overhead needed | Sprint 7b |
 | ERP upload deferred | Manual warden approval V1 | Complexity vs benefit | V2 |
 | Laundry priority exception deferred | Fairness score sufficient V1 | Complexity vs benefit | V2 |
 | RAG deferred | No external DB in V1 | Zero dependency constraint | V2 |
@@ -369,21 +427,27 @@ Issues found and fixed in Sprint 6 manual checks:
 2. mess analytics used wrong field names (taste_score) → fixed to food_quality etc.
 3. password reset used is_revoked → fixed to revoked
 
+### Sprint 7 — 7/7 PASS (March 21, 2026)
+Create hostel, lookup by code, invalid code 404, student registration with code, invalid code registration rejected, data isolation Beta→Alpha blocked, data isolation Alpha sees own data only.
+
+### Sprint 7b — 13/13 PASS (March 21, 2026)
+Pagination on complaints, notifications, laundry, mess, approval queue; GET /health; PATCH /me/password wrong password rejected; PATCH /me/password correct password succeeds; GET /users warden-scoped; GET /complaints/ warden-scoped with filter; complaint templates returned; complaint <10 chars rejected; notice POST/GET/DELETE; mess menu POST/GET; feedback streak increments on consecutive days; feedback streak resets on gap; past date laundry booking rejected.
+
 ---
 
 ## SECTION 9 — CURRENT STATE & NEXT STEPS
 
 ```
-Current sprint: Sprint 7 — Multi-tenant Architecture
+Current sprint: Sprint F — React PWA Frontend
 Sprint 1: ✅ Foundation + Auth
 Sprint 2: ✅ Agent 1 + Celery Pipeline
 Sprint 3: ✅ Agent 1 Complete (approval queue, resolution flow)
 Sprint 4: ✅ Agent 2 (Laundry) + Agent 3 (Mess)
 Sprint 5: ✅ Push Notifications + Analytics + JWT Refresh + Hostel Config
 Sprint 6: ✅ Backend Completions + Flow Fixes — backend feature-complete
-Sprint 7: 🔄 Multi-tenant (hostel_id + hostel codes) — STARTING NOW
-Sprint 7b: ⏳ API Polish + Mess Menu + Notice Board + Templates + Streak
-Sprint F: ⏳ React PWA Frontend (after Sprint 7b complete)
+Sprint 7: ✅ Multi-tenant Architecture (hostel_id + hostel codes)
+Sprint 7b: ✅ API Polish + New Features
+Sprint F: 🔄 React PWA Frontend — STARTING NOW
 Sprint D: ⏳ Docker + Railway deployment (after Sprint F)
 ```
 
@@ -394,7 +458,7 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint 7 — Multi-tenant Architecture
+Current sprint: Sprint F — React PWA Frontend
 
 Your task: [DESCRIBE TASK]
 ```

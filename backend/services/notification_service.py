@@ -63,17 +63,21 @@ async def notify_all_by_role(
     body: str,
     notification_type: NotificationType,
     db: AsyncSession,
+    hostel_id=None,
 ) -> int:
     """
     Send the same notification to all users with a specific role.
+    Sprint 7: Scoped to hostel_id when provided — never notifies across hostels.
     Returns the count of notifications created.
     """
     from sqlalchemy import select
     from models.user import User
 
-    result = await db.execute(
-        select(User).where(User.role == role, User.is_active == True)  # noqa: E712
-    )
+    query = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+
+    result = await db.execute(query)
     users = result.scalars().all()
 
     for user in users:

@@ -2,7 +2,8 @@
 routes/mess.py — HostelOps AI
 ==================================
 Mess feedback submission and reporting endpoints.
-Thin routes — all logic in services/mess_service.py.
+Thin routes — all logic in services/mess_service.py and mess_menu_service.py.
+Sprint 7b: Added mess menu endpoints and pagination.
 """
 import logging
 import uuid
@@ -14,10 +15,11 @@ from typing import List, Optional
 
 from database import get_db
 from models.user import User
-from schemas.mess import MessFeedbackCreate, MessFeedbackRead, MessSummaryResponse, MessAlertRead
+from schemas.mess import MessFeedbackCreate, MessFeedbackRead, MessMenuCreate, MessMenuRead, MessSummaryResponse, MessAlertRead
 from schemas.enums import MealPeriod, UserRole
 from services.auth_service import get_current_user, require_role
 from services import mess_service
+from services import mess_menu_service
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,8 @@ async def get_summary(
 
 @router.get("/alerts", response_model=List[MessAlertRead])
 async def get_alerts(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -79,14 +83,57 @@ async def get_alerts(
     if current_user.role not in allowed:
         raise HTTPException(status_code=403, detail="Access restricted to wardens and mess managers")
     alerts = await mess_service.get_recent_alerts(db)
-    return [MessAlertRead.model_validate(a) for a in alerts]
+    return [MessAlertRead.model_validate(a) for a in alerts[offset:offset + limit]]
 
 
 @router.get("/my-feedback", response_model=List[MessFeedbackRead])
 async def my_feedback(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(require_role(UserRole.student)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the current student's feedback history (last 30 days)."""
     feedbacks = await mess_service.get_student_feedback(current_user.id, db)
-    return [MessFeedbackRead.model_validate(f) for f in feedbacks]
+    return [MessFeedbackRead.model_validate(f) for f in feedbacks[offset:offset + limit]]
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7b: Mess Menu endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/menu", response_model=MessMenuRead, status_code=201)
+async def create_mess_menu(
+    payload: MessMenuCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a mess menu entry. Allowed: mess_manager or WARDEN_ROLES."""
+    allowed = WARDEN_ROLES + [UserRole.mess_manager]
+    if current_user.role not in allowed:
+        raise HTTPException(status_code=403, detail="Only mess managers and wardens can create menu entries.")
+    menu = await mess_menu_service.create_menu(
+        payload=payload,
+        created_by=current_user.id,
+        hostel_id=current_user.hostel_id,
+        db=db,
+    )
+    return MessMenuRead.model_validate(menu)
+
+
+@router.get("/menu", response_model=List[MessMenuRead])
+async def get_mess_menu(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current mess menu for the hostel. Any authenticated user."""
+    menus = await mess_menu_service.get_current_menu(
+        hostel_id=current_user.hostel_id,
+        db=db,
+        limit=limit,
+        offset=offset,
+    )
+    return [MessMenuRead.model_validate(m) for m in menus]

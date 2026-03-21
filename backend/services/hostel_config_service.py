@@ -96,19 +96,23 @@ async def update_config(updates: dict, db: AsyncSession) -> HostelConfig:
     return config
 
 
-async def seed_default_config(db: AsyncSession) -> HostelConfig | None:
+async def seed_default_config(db: AsyncSession, hostel_id=None) -> HostelConfig | None:
     """
-    Create the default hostel_config row if none exists.
-    Called from create_admin.py during bootstrap. Idempotent.
+    Create the default hostel_config row if none exists for this hostel.
+    Called from create_admin.py (legacy, hostel_id=None) and hostel_service (Sprint 7).
+    Idempotent — safe to call multiple times.
     """
-    result = await db.execute(select(HostelConfig))
+    query = select(HostelConfig)
+    if hostel_id is not None:
+        query = query.where(HostelConfig.hostel_id == hostel_id)
+
+    result = await db.execute(query)
     if result.scalar_one_or_none():
         logger.info("hostel_config row already exists — skipping seed")
         return None
 
-    config = HostelConfig(id=str(uuid.uuid4()))
+    config = HostelConfig(id=str(uuid.uuid4()), hostel_id=hostel_id)
     db.add(config)
-    await db.commit()
-    await db.refresh(config)
-    logger.info("Seeded default hostel config row")
+    await db.flush()
+    logger.info(f"Seeded default hostel config row (hostel_id={hostel_id})")
     return config

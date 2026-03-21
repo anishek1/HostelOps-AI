@@ -18,6 +18,8 @@ from schemas.user import StaffCreate
 from services.auth_service import hash_password
 from services.notification_service import notify_user
 
+from typing import Optional
+
 logger = logging.getLogger(__name__)
 
 
@@ -212,7 +214,8 @@ async def warden_reset_password(
 async def create_staff_account(
     staff_data: StaffCreate,
     warden_id: uuid.UUID,
-    db: AsyncSession
+    db: AsyncSession,
+    hostel_id=None,
 ) -> User:
     """
     Create a staff account (warden, assistant_warden, security, mess_staff).
@@ -249,7 +252,8 @@ async def create_staff_account(
         hashed_password=hash_password(staff_data.password),
         is_verified=True,
         is_active=True,
-        has_seen_onboarding=True
+        has_seen_onboarding=True,
+        hostel_id=hostel_id,  # Sprint 7: inherit from creating warden
     )
 
     db.add(staff_user)
@@ -267,3 +271,76 @@ async def create_staff_account(
 
     logger.info(f"Staff account {staff_user.id} ({staff_data.role}) created by warden {warden_id}")
     return staff_user
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7b: Warden list users
+# ---------------------------------------------------------------------------
+
+async def list_users(
+    db: AsyncSession,
+    hostel_id=None,
+    role: Optional[UserRole] = None,
+    is_verified: Optional[bool] = None,
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[User]:
+    """
+    List users in a hostel with optional filters.
+    Golden Rule 31: always scoped by hostel_id when provided.
+    """
+    query = select(User).order_by(User.created_at.desc())
+
+    if hostel_id is not None:
+        query = query.where(User.hostel_id == hostel_id)
+    if role is not None:
+        query = query.where(User.role == role)
+    if is_verified is not None:
+        query = query.where(User.is_verified == is_verified)
+    if is_active is not None:
+        query = query.where(User.is_active == is_active)
+    if search:
+        from sqlalchemy import or_
+        query = query.where(
+            or_(User.name.ilike(f"%{search}%"), User.room_number.ilike(f"%{search}%"))
+        )
+
+    query = query.limit(limit).offset(offset)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7b: Self-service password change
+# ---------------------------------------------------------------------------
+
+async def change_own_password(
+    user_id: uuid.UUID,
+    current_password: str,
+    new_password: str,
+    db: AsyncSession,
+) -> User:
+    """
+    Student/staff changes their own password.
+    Verifies the current password before updating.
+    Raises 400 if current password is wrong.
+    """
+    from services.auth_service import verify_password
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    if not verify_password(current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    user.hashed_password = hash_password(new_password)
+    await db.commit()
+    await db.refresh(user)
+    logger.info(f"User {user_id} changed their own password")
+    return user

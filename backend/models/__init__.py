@@ -20,3 +20,8 @@ from models.notification import Notification        # noqa: F401
 from models.hostel_config import HostelConfig       # noqa: F401
 from models.refresh_token import RefreshToken       # noqa: F401
 from models.push_subscription import PushSubscription  # noqa: F401
+# Sprint 7: multi-tenant
+from models.hostel import Hostel                    # noqa: F401
+# Sprint 7b: new features
+from models.mess_menu import MessMenu               # noqa: F401
+from models.notice import Notice                    # noqa: F401

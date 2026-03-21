@@ -37,14 +37,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def get_pending_approvals(db: AsyncSession) -> List[ApprovalQueueItem]:
+async def get_pending_approvals(
+    db: AsyncSession,
+    limit: int = 20,
+    offset: int = 0,
+) -> List[ApprovalQueueItem]:
     """
-    Returns all pending approval queue items sorted by created_at ascending.
+    Returns pending approval queue items sorted by created_at ascending, paginated.
     """
     result = await db.execute(
         select(ApprovalQueueItem)
         .where(ApprovalQueueItem.status == ApprovalStatus.pending)
         .order_by(ApprovalQueueItem.created_at.asc())
+        .limit(limit)
+        .offset(offset)
     )
     items = result.scalars().all()
     logger.info(f"[approval_queue] Found {len(items)} pending items")
