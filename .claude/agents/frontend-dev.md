@@ -1,8 +1,14 @@
 \---
 
 name: frontend-dev
-
 description: React + TypeScript frontend specialist for HostelOPS AI. Uses Stitch MCP for design generation and converts to React components. Invoke for Sprint F frontend work.
+model: sonnet
+skills:
+  - stitch-design
+  - react-components
+  - shadcn-ui
+  - design-md
+  - enhance-prompt
 
 model: sonnet
 

@@ -1,99 +1,129 @@
 /**
  * context/AuthContext.tsx — HostelOps AI
- * Manages authentication state: current user, JWT token, login/logout.
- * Token stored in React useState (memory only) — never persisted to storage.
+ * Authentication state: tokens in localStorage, user in memory.
+ * On mount: restores session from localStorage via GET /users/me.
+ * login() stores both tokens; logout() clears storage and state.
+ * setSession() allows external flows (hostel setup) to inject a session.
  */
 
 import React, {
     createContext,
     useCallback,
     useContext,
+    useEffect,
     useMemo,
     useState,
 } from 'react';
-import { getMe, login as apiLogin } from '../api/authApi';
+import { getMe, login as apiLogin, logout as apiLogout } from '../api/authApi';
 import type { LoginRequest, UserRead, UserRole } from '../types/user';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ── Types ────────────────────────────────────────────────────────────────────
 
-interface AuthState {
+interface AuthContextValue {
     user: UserRead | null;
-    token: string | null;
+    accessToken: string | null;
     isAuthenticated: boolean;
     isLoading: boolean;
-}
-
-interface AuthContextValue extends AuthState {
     login: (credentials: LoginRequest) => Promise<void>;
-    logout: () => void;
+    logout: () => Promise<void>;
+    setSession: (accessToken: string, refreshToken: string, user: UserRead) => void;
     hasRole: (...roles: UserRole[]) => boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
+// ── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// No local storage definitions needed// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
+// ── Storage helpers ──────────────────────────────────────────────────────────
+
+function storeTokens(access: string, refresh: string) {
+    localStorage.setItem('access_token', access);
+    localStorage.setItem('refresh_token', refresh);
+}
+
+function clearTokens() {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+}
+
+// ── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<UserRead | null>(null);
-    const [token, setToken] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false); // No need to load from local storage
+    const [accessToken, setAccessToken] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Restore session on mount
+    useEffect(() => {
+        const stored = localStorage.getItem('access_token');
+        if (!stored) {
+            setIsLoading(false);
+            return;
+        }
+        getMe()
+            .then((profile) => {
+                setUser(profile);
+                setAccessToken(stored);
+            })
+            .catch(() => {
+                clearTokens();
+            })
+            .finally(() => setIsLoading(false));
+    }, []);
 
     const login = useCallback(async (credentials: LoginRequest) => {
-        setIsLoading(true);
+        const data = await apiLogin(credentials);
+        storeTokens(data.access_token, data.refresh_token);
+        setAccessToken(data.access_token);
+        setUser(data.user);
+    }, []);
+
+    const logout = useCallback(async () => {
         try {
-            const tokenData = await apiLogin(credentials);
-            const accessToken = tokenData.access_token;
-            setToken(accessToken);
-
-
-
-            const userProfile = await getMe(accessToken);
-            setUser(userProfile);
+            await apiLogout();
+        } catch {
+            // Ignore — server may already have invalidated token
         } finally {
-            setIsLoading(false);
+            clearTokens();
+            setAccessToken(null);
+            setUser(null);
         }
     }, []);
 
-    const logout = useCallback(() => {
-        setToken(null);
-        setUser(null);
-    }, []);
+    // Used by flows that receive tokens without going through login() —
+    // e.g. hostel setup, which returns tokens directly in its response.
+    const setSession = useCallback(
+        (newAccessToken: string, newRefreshToken: string, newUser: UserRead) => {
+            storeTokens(newAccessToken, newRefreshToken);
+            setAccessToken(newAccessToken);
+            setUser(newUser);
+        },
+        [],
+    );
 
     const hasRole = useCallback(
-        (...roles: UserRole[]) => {
-            if (!user) return false;
-            return roles.includes(user.role);
-        },
+        (...roles: UserRole[]) => (user ? roles.includes(user.role) : false),
         [user],
     );
 
     const value = useMemo<AuthContextValue>(
         () => ({
             user,
-            token,
+            accessToken,
             isAuthenticated: !!user,
             isLoading,
             login,
             logout,
+            setSession,
             hasRole,
         }),
-        [user, token, isLoading, login, logout, hasRole],
+        [user, accessToken, isLoading, login, logout, setSession, hasRole],
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// ---------------------------------------------------------------------------
-// Hook (internal — use useAuth.ts externally)
-// ---------------------------------------------------------------------------
+// ── Internal hook (use useAuth.ts externally) ─────────────────────────────────
 
 export function useAuthContext(): AuthContextValue {
     const ctx = useContext(AuthContext);

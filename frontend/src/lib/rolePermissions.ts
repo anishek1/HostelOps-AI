@@ -1,38 +1,76 @@
 /**
  * lib/rolePermissions.ts — HostelOps AI
- * Centralised role → allowed routes mapping.
+ * Centralised role → routes mapping.
  * All role checks must reference this file — never hardcode role strings in components.
  */
 
 import type { UserRole } from '../types/user';
 
-/** Maps each role to the default dashboard path after login. */
-export const ROLE_DEFAULT_ROUTE: Record<UserRole, string> = {
-    student: '/student',
-    laundry_man: '/laundry-staff',
-    mess_secretary: '/mess-staff',
-    mess_manager: '/mess-manager',
-    assistant_warden: '/warden',
-    warden: '/warden',
-    chief_warden: '/warden',
-};
+// ── Role groups ───────────────────────────────────────────────────────────────
 
-/** Roles that have access to the Warden Dashboard. */
 export const WARDEN_ROLES: UserRole[] = [
     'assistant_warden',
     'warden',
     'chief_warden',
 ];
 
-/** Roles that have access to student-facing pages. */
 export const STUDENT_ROLES: UserRole[] = ['student'];
 
-/** Check if a role has warden-level access. */
+export const LAUNDRY_STAFF_ROLES: UserRole[] = ['laundry_man'];
+
+export const MESS_STAFF_ROLES: UserRole[] = ['mess_secretary', 'mess_manager'];
+
+export const STAFF_ROLES: UserRole[] = [...LAUNDRY_STAFF_ROLES, ...MESS_STAFF_ROLES];
+
+// ── Route lists ───────────────────────────────────────────────────────────────
+
+export const STUDENT_ROUTES = [
+    '/student',
+    '/student/onboarding',
+    '/student/complaints',
+    '/student/complaints/new',
+    '/student/laundry',
+    '/student/mess',
+    '/student/notifications',
+    '/student/profile',
+];
+
+export const WARDEN_ROUTES = [
+    '/warden',
+    '/warden/approval-queue',
+    '/warden/registrations',
+    '/warden/staff/new',
+    '/warden/complaints',
+    '/warden/settings',
+];
+
+export const STAFF_ROUTES = [
+    '/staff/laundry',
+    '/staff/mess',
+];
+
+// ── Default redirect after login ──────────────────────────────────────────────
+
+export const ROLE_DEFAULT_ROUTE: Record<UserRole, string> = {
+    student:           '/student',
+    laundry_man:       '/staff/laundry',
+    mess_secretary:    '/staff/mess',
+    mess_manager:      '/staff/mess',
+    assistant_warden:  '/warden',
+    warden:            '/warden',
+    chief_warden:      '/warden',
+};
+
+export function getDefaultRoute(role: UserRole): string {
+    return ROLE_DEFAULT_ROUTE[role] ?? '/auth/login';
+}
+
+// ── Role predicates ───────────────────────────────────────────────────────────
+
 export function isWardenRole(role: UserRole): boolean {
     return WARDEN_ROLES.includes(role);
 }
 
-/** Get the redirect path after login based on role. */
-export function getDefaultRoute(role: UserRole): string {
-    return ROLE_DEFAULT_ROUTE[role] ?? '/';
+export function isStaffRole(role: UserRole): boolean {
+    return STAFF_ROLES.includes(role);
 }

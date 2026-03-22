@@ -6,7 +6,12 @@
       "Bash(xargs grep:*)",
       "Bash(ls:*)",
       "Bash(.venv/Scripts/python -c \":*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(curl -s \"https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzA2OTk0NjZjMGFiODRhMWNiZTZkMDQ3NzQ3MDBjZDYzEgsSBxCPmbftrBsYAZIBIwoKcHJvamVjdF9pZBIVQhM2NzE0NTQ0NDcxMjM2NzI0Mjcw&filename=&opi=89354086\")",
+      "Bash(curl:*)",
+      "mcp__stitch__generate_screen_from_text",
+      "WebFetch(domain:stitch.withgoogle.com)",
+      "Bash(find 'C:\\\\Users\\\\anish\\\\Desktop\\\\HostelOPS AI\\\\backend' -name hostel*.py -o -name *hostel*.py)"
     ]
   }
 }
