@@ -39,6 +39,7 @@ export default function Register() {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [rollNumber, setRollNumber] = useState('');
+    const [erpDocUrl, setErpDocUrl] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +67,7 @@ export default function Register() {
                 hostel_mode: hostelInfo.mode,
                 password,
                 roll_number: isCollege ? rollNumber.trim() : undefined,
+                erp_document_url: isCollege ? erpDocUrl.trim() : undefined,
             });
             navigate('/auth/pending', { replace: true });
         } catch (err: unknown) {
@@ -92,7 +94,7 @@ export default function Register() {
 
     const canSubmit =
         hostelCode && hostelInfo && name && roomNumber && password &&
-        (!isCollege || rollNumber) && !isLoading;
+        (!isCollege || (rollNumber && erpDocUrl)) && !isLoading;
 
     return (
         <div
@@ -316,7 +318,7 @@ export default function Register() {
                     )}
                 </section>
 
-                {/* College mode explanation banner */}
+                {/* College mode info banner */}
                 {isCollege && (
                     <div
                         style={{
@@ -325,14 +327,14 @@ export default function Register() {
                             padding: 20,
                             marginBottom: 28,
                             display: 'flex',
-                            gap: 16,
+                            gap: 14,
                             border: '1px solid rgba(0,0,0,0.06)',
                         }}
                     >
                         <div
                             style={{
-                                width: 40,
-                                height: 40,
+                                width: 38,
+                                height: 38,
                                 borderRadius: 12,
                                 background: 'rgba(255,255,255,0.6)',
                                 display: 'flex',
@@ -347,10 +349,10 @@ export default function Register() {
                         </div>
                         <div>
                             <p style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, margin: '0 0 4px' }}>
-                                Roll number required
+                                College mode — extra details required
                             </p>
                             <p style={{ fontSize: 12, color: C.textSecondary, margin: 0, lineHeight: 1.5 }}>
-                                This hostel verifies students using their college roll number.
+                                Provide your roll number and a link to your ERP / ID document for verification.
                             </p>
                         </div>
                     </div>
@@ -412,10 +414,30 @@ export default function Register() {
                                     type="text"
                                     value={rollNumber}
                                     onChange={(e) => setRollNumber(e.target.value)}
-                                    placeholder="Enter your full college roll number"
+                                    placeholder="Enter your college roll number"
                                     style={inputInnerStyle}
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {/* ERP document URL (college only) */}
+                    {isCollege && (
+                        <div style={{ marginBottom: 24 }}>
+                            <label style={sectionLabelStyle}>ERP / ID DOCUMENT LINK</label>
+                            <div style={{ ...fieldRowStyle, marginTop: 10 }}>
+                                <span className="material-symbols-outlined" style={iconStyle}>link</span>
+                                <input
+                                    type="url"
+                                    value={erpDocUrl}
+                                    onChange={(e) => setErpDocUrl(e.target.value)}
+                                    placeholder="https://erp.college.edu/document/..."
+                                    style={inputInnerStyle}
+                                />
+                            </div>
+                            <p style={{ fontSize: 11, color: C.textSecondary, margin: '8px 0 0', opacity: 0.7, lineHeight: 1.4 }}>
+                                Paste a shareable link to your student ID, ERP profile, or admission letter.
+                            </p>
                         </div>
                     )}
 

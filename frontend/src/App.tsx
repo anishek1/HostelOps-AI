@@ -33,6 +33,7 @@ const Onboarding          = lazy(() => import('./pages/student/Onboarding'));
 const ComplaintTracker    = lazy(() => import('./pages/student/ComplaintTracker'));
 const FileComplaint       = lazy(() => import('./pages/student/FileComplaint'));
 const ComplaintDetail     = lazy(() => import('./pages/student/ComplaintDetail'));
+const ComplaintResolvedSuccess = lazy(() => import('./pages/student/ComplaintResolvedSuccess'));
 const LaundryBooking      = lazy(() => import('./pages/student/LaundryBooking'));
 const MessPage            = lazy(() => import('./pages/student/MessPage'));
 const NotificationInbox   = lazy(() => import('./pages/student/NotificationInbox'));
@@ -119,6 +120,14 @@ function AppRoutes() {
                     element={
                         <ProtectedRoute allowedRoles={STUDENT_ROLES}>
                             <ComplaintDetail />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/student/complaints/:id/resolved"
+                    element={
+                        <ProtectedRoute allowedRoles={STUDENT_ROLES}>
+                            <ComplaintResolvedSuccess />
                         </ProtectedRoute>
                     }
                 />

@@ -11,7 +11,8 @@
       "Bash(curl:*)",
       "mcp__stitch__generate_screen_from_text",
       "WebFetch(domain:stitch.withgoogle.com)",
-      "Bash(find 'C:\\\\Users\\\\anish\\\\Desktop\\\\HostelOPS AI\\\\backend' -name hostel*.py -o -name *hostel*.py)"
+      "Bash(find 'C:\\\\Users\\\\anish\\\\Desktop\\\\HostelOPS AI\\\\backend' -name hostel*.py -o -name *hostel*.py)",
+      "mcp__stitch__list_screens"
     ]
   }
 }
