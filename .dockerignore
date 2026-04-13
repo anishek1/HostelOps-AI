@@ -1,0 +1,14 @@
+frontend/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.venv/
+venv/
+.env
+.env.*
+*.md
+nixpacks.toml
+requirements.txt
+backend/celerybeat-schedule
+.git/
+.gitignore
