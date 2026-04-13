@@ -31,16 +31,6 @@ dist/
 *.egg
 *.whl
 
-# Internal planning & AI tooling
-.claude/
-CLAUDE.md
-CONVENTIONS.md
-PRD.md
-PROJECT_STATE.md
-DESIGN.md
-DEPLOYMENT.md
-SPRINT_2_PROMPT.md
-files/
 
 # Celery
 celerybeat-schedule
