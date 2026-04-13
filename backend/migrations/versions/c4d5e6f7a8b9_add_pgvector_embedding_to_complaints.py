@@ -10,6 +10,7 @@ to the complaints table for semantic deduplication.
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.exc import ProgrammingError
 
 revision: str = 'c4d5e6f7a8b9'
 down_revision: Union[str, None] = 'b3c4d5e6f7a8'
@@ -18,8 +19,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Enable pgvector extension (Supabase supports this natively)
-    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+    # Enable pgvector extension.
+    # On Supabase (the primary target) this works without superuser.
+    # On other managed Postgres (RDS, Azure, etc.) this requires superuser
+    # or the extension must be pre-installed. If this step fails, run:
+    #   CREATE EXTENSION IF NOT EXISTS vector;
+    # as a superuser and then re-run `alembic upgrade head`.
+    try:
+        op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except ProgrammingError as e:
+        raise SystemExit(
+            "\n\n[MIGRATION ERROR] Cannot create pgvector extension.\n"
+            "This step requires superuser privileges on PostgreSQL.\n"
+            "\nFix options:\n"
+            "  1. Supabase: enable pgvector in the dashboard under Database → Extensions.\n"
+            "  2. Other managed Postgres: connect as superuser and run:\n"
+            "       CREATE EXTENSION IF NOT EXISTS vector;\n"
+            "     then re-run: alembic upgrade head\n"
+            f"\nOriginal error: {e}\n"
+        ) from e
     op.add_column(
         'complaints',
         sa.Column('embedding', sa.Text(), nullable=True),

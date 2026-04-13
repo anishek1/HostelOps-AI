@@ -26,19 +26,17 @@ from services.complaint_service import VALID_TRANSITIONS
 def run_async(coro):
     """
     Runs an async coroutine from a sync Celery task.
-    Creates a new event loop if none exists.
-    Use this to call async tools from Celery tasks.
+    Always creates a fresh event loop — avoids the deprecated
+    asyncio.get_event_loop() which raises RuntimeError in Python 3.10+
+    when called from a thread with no current event loop (common in Celery workers).
     """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
         return loop.run_until_complete(coro)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
 
 # ---------------------------------------------------------------------------
 # Helpers: sync DB wrappers for Celery (no async sessions allowed)

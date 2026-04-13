@@ -896,7 +896,7 @@ celery -A celery_app beat --loglevel=info
 ### Frontend
 
 ```bash
-cd frontend
+ 
 npm run dev
 # Opens at http://localhost:5173
 ```
