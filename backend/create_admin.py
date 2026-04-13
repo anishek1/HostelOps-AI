@@ -35,7 +35,7 @@ async def create_admin_user(db) -> None:
             User.is_active == True,
         )
     )
-    existing = result.scalar_one_or_none()
+    existing = result.scalars().first()
 
     if existing:
         print(f"\n✅ Admin already exists: '{existing.name}' (Room: {existing.room_number})")
