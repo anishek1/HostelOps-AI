@@ -36,7 +36,7 @@
 
 ## 1. What is HostelOPS AI?
 
-HostelOPS AI is an **autonomous operations management system** for college hostels and independent PGs. It replaces manual, reactive day-to-day management with a structured, AI-driven pipeline that is always-on, fair, and transparent.
+HostelOPS AI is an **operations management system** for college hostels and independent PGs. It uses an LLM to classify and route student complaints, and rule-based Celery tasks to monitor laundry and mess operations. The goal is to reduce the manual triage burden on wardens and give students visibility into whether their complaints are being acted on.
 
 ### Problem
 
@@ -87,25 +87,29 @@ HostelOPS AI automates the routine, escalates the important, and gives every sta
 
 ## 3. Architecture Overview
 
-### The Supervisor Pattern
+### How It Works
 
-HostelOPS AI uses the **Supervisor Pattern** — a multi-agent architecture where the Orchestrator is the single entry point for all student inputs.
+HostelOPS AI has **one LLM agent** — for complaint classification. Laundry and mess operations are handled by Celery scheduled tasks with rule-based logic, not by AI. This is an honest distinction worth making.
 
 ```
 Student PWA
      │
      ▼
 ┌─────────────────────────────────────────┐
-│           Orchestrator Agent            │
-│  • Receives all complaints              │
-│  • LLM classification (Groq + Llama 3) │
-│  • Confidence-gated routing             │
-│  • Fallback rule-based classifier       │
+│        Complaint Classification         │
+│  • Groq LLM (llama-3.3-70b-versatile)  │
+│  • Extracts: category, severity,        │
+│    location, affected count             │
+│  • Fallback: rule-based classifier      │
+│  • Runs async in a Celery task          │
 └──────┬──────────────────────────────────┘
        │
-       ├──── High confidence → Auto-assign to staff
+       ├──── Confidence ≥ 0.85 → Auto-assign to staff
        │
-       └──── Low confidence / high severity → Warden approval queue
+       └──── Confidence < 0.85 or high severity → Warden approval queue
+
+Laundry & Mess monitoring:
+       Celery Beat tasks — threshold-based, no LLM involved
 ```
 
 ### Complaint State Machine
@@ -365,9 +369,15 @@ All endpoints are prefixed with `/api`. Full interactive docs available at `/doc
 
 ## 7. AI Pipeline
 
+> **Honest scope note:** The LLM is used for one thing — classifying free-text complaints. Laundry and mess features are entirely rule-based (Celery tasks + threshold checks). There is no LLM reasoning happening outside the complaint pipeline.
+
+### Why LLM for complaints?
+
+A dropdown of 9 categories would handle classification just as well. The LLM earns its place by extracting things a dropdown cannot: **severity** (how urgent the student sounds), **location** (third floor, block B), and **affected count** (one person vs. a whole floor). That context feeds the priority scoring and the warden's approval queue.
+
 ### Classification Flow
 
-Every complaint goes through a 3-layer classification pipeline:
+Every complaint goes through a 3-layer pipeline:
 
 ```
 1. Groq LLM (primary)
