@@ -7,17 +7,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fileComplaint } from '../../api/complaintsApi';
 import AppShell from '../../components/AppShell';
-
-const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
-    danger: '#E83B2A',
-    border: 'rgba(0,0,0,0.06)',
-};
+import { C } from '../../lib/theme';
 
 const CHIPS = [
     { label: 'Fan not working', prefix: '🔧' },
@@ -48,7 +38,7 @@ export default function FileComplaint() {
         setLoading(true);
         try {
             const c = await fileComplaint({ text: text.trim(), is_anonymous: isAnonymous });
-            navigate(`/student/complaints/${c.id}`, { replace: true });
+            navigate(`/student/complaints/${c.complaint_id}`, { replace: true });
         } catch {
             setError('Could not submit. Please try again.');
         } finally {
@@ -76,7 +66,7 @@ export default function FileComplaint() {
                 >
                     <button
                         onClick={() => navigate(-1)}
-                        style={{ background: C.card, border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                        style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                     >
                         <span className="material-symbols-outlined" style={{ fontSize: 20, color: C.textPrimary }}>arrow_back</span>
                     </button>
@@ -130,7 +120,7 @@ export default function FileComplaint() {
                             background: C.card,
                             borderRadius: 16,
                             padding: '14px 16px',
-                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                            border: `1px solid ${C.border}`,
                             marginBottom: 14,
                         }}
                     >
@@ -168,7 +158,7 @@ export default function FileComplaint() {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                            border: `1px solid ${C.border}`,
                             marginBottom: 14,
                         }}
                     >
@@ -189,7 +179,7 @@ export default function FileComplaint() {
                                 width: 48,
                                 height: 28,
                                 borderRadius: 999,
-                                background: isAnonymous ? C.primary : '#D1D5DB',
+                                background: isAnonymous ? C.primary : C.textDisabled,
                                 border: 'none',
                                 cursor: 'pointer',
                                 position: 'relative',
@@ -230,7 +220,7 @@ export default function FileComplaint() {
                     width: '100%',
                     maxWidth: 430,
                     padding: '12px 20px',
-                    background: 'linear-gradient(to top, #FFF5EE 70%, transparent)',
+                    background: `linear-gradient(to top, ${C.bg} 70%, transparent)`,
                     zIndex: 30,
                 }}
             >
@@ -253,7 +243,6 @@ export default function FileComplaint() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 8,
-                        boxShadow: canSubmit ? '0 4px 16px rgba(70,71,211,0.25)' : 'none',
                     }}
                 >
                     {loading ? 'Submitting…' : <>Submit Complaint <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_forward</span></>}

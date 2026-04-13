@@ -8,10 +8,11 @@ import client from './client';
 
 export interface MessMenuItem {
     id: string;
-    date: string;
     meal: MealPeriod;
     items: string[];
-    posted_by: string;
+    day_of_week: string;
+    valid_from: string;
+    created_by: string;
     created_at: string;
 }
 

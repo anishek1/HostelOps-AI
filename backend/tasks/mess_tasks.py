@@ -2,9 +2,9 @@
 tasks/mess_tasks.py — HostelOps AI
 =====================================
 Periodic Celery tasks for mess feedback monitoring.
-analyze_daily_mess_feedback: runs at 10pm daily (22:00 UTC)
-check_participation_alert: runs at 8am daily (08:00 UTC)
-Uses asyncio.run() pattern for async DB access from sync Celery tasks.
+analyze_daily_mess_feedback: runs at 10pm daily.
+check_participation_alert: runs daily at 8am.
+Calls mess_service functions directly — no MessAgent wrapper needed.
 """
 import asyncio
 import logging
@@ -19,16 +19,14 @@ logger = logging.getLogger(__name__)
 def analyze_daily_mess_feedback():
     """
     Runs at 10pm daily.
-    Triggers Agent 3 to analyze feedback for today.
-    Sends alerts if thresholds are crossed.
+    Checks mess feedback thresholds and sends alerts if crossed.
     """
     async def _run():
         from database import AsyncSessionLocal
-        from agents.agent_mess import MessAgent
+        from services.mess_service import check_and_alert
         async with AsyncSessionLocal() as db:
             today = date.today()
-            agent = MessAgent()
-            await agent.analyze_daily_feedback(today, db)
+            await check_and_alert(today, db)
 
     logger.info("[mess_tasks] Running analyze_daily_mess_feedback")
     asyncio.run(_run())
@@ -39,8 +37,8 @@ def analyze_daily_mess_feedback():
 def check_participation_alert():
     """
     Runs at 8am daily.
-    Checks if participation was below 15% for 3 consecutive days.
-    Alerts assistant_warden if so.
+    Checks if participation was below threshold for 3 consecutive days.
+    Alerts warden if so.
     """
     async def _run():
         from database import AsyncSessionLocal

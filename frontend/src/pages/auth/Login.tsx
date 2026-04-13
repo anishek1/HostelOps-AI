@@ -12,18 +12,7 @@ import { useHostelLookup } from '../../hooks/useHostelLookup';
 import SkeletonCard from '../../components/SkeletonCard';
 import { getDefaultRoute } from '../../lib/rolePermissions';
 import type { HostelPublicInfo } from '../../types/user';
-
-const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
-    inputBg: '#F6ECE5',
-    danger: '#E83B2A',
-    warning: '#FFB800',
-};
+import { C } from '../../lib/theme';
 
 interface LocationState {
     hostelCode?: string;
@@ -154,7 +143,7 @@ export default function Login() {
                     width: 400,
                     height: 400,
                     borderRadius: '50%',
-                    border: '60px solid rgba(70,71,211,0.04)',
+                    border: `60px solid ${C.primaryLight}`,
                     pointerEvents: 'none',
                     zIndex: 0,
                 }}
@@ -202,13 +191,13 @@ export default function Login() {
                     {/* White card with all inputs */}
                     <div
                         style={{
-                            background: C.card,
+                            background: C.bgSurface,
                             borderRadius: 16,
                             padding: 20,
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 14,
-                            boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+                            border: `1px solid ${C.border}`,
                         }}
                     >
                         {/* Hostel code field */}
@@ -249,7 +238,7 @@ export default function Login() {
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: 6,
-                                        background: 'rgba(70,71,211,0.08)',
+                                        background: C.primaryLight,
                                         padding: '4px 12px',
                                         borderRadius: 999,
                                         width: 'fit-content',
@@ -411,7 +400,7 @@ export default function Login() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: 8,
-                            boxShadow: canSubmit ? '0 4px 16px rgba(70,71,211,0.2)' : 'none',
+                            boxShadow: canSubmit ? `0 4px 16px rgba(124,92,252,0.3)` : 'none',
                         }}
                     >
                         {isLoading ? 'Signing in…' : 'Sign in'}
@@ -494,7 +483,8 @@ export default function Login() {
 const inputRowStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    background: '#F6ECE5',
+    background: '#1C1B24',
+    border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: 12,
     height: 52,
     paddingLeft: 4,
@@ -502,7 +492,7 @@ const inputRowStyle: React.CSSProperties = {
 
 const fieldIconStyle: React.CSSProperties = {
     padding: '0 12px',
-    color: '#767586',
+    color: '#6B6B80',
     fontSize: 20,
     flexShrink: 0,
 };
@@ -514,7 +504,7 @@ const inputStyle: React.CSSProperties = {
     border: 'none',
     outline: 'none',
     fontSize: 15,
-    color: '#1A1A2E',
+    color: '#F0F0F5',
     fontFamily: 'inherit',
     fontWeight: 500,
 };

@@ -11,20 +11,20 @@ import { getComplaint, getComplaintTimeline, confirmResolved, reopenComplaint } 
 import type { ComplaintStatus } from '../../types/complaint';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
+    textMuted: '#6B6B80',
+    card: '#13121A',
     danger: '#E83B2A',
     dangerLight: 'rgba(232,59,42,0.08)',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.10)',
     amber: '#D48C00',
     amberLight: 'rgba(255,184,0,0.10)',
-    border: 'rgba(0,0,0,0.06)',
+    border: 'rgba(255,255,255,0.06)',
 };
 
 const STATUS_META: Record<ComplaintStatus, { label: string; bg: string; text: string; dot: string }> = {
@@ -145,14 +145,14 @@ export default function ComplaintDetail() {
                             background: C.card,
                             borderRadius: 20,
                             padding: 20,
-                            boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+                            boxShadow: '0 2px 12px rgba(255,255,255,0.06)',
                             marginBottom: 14,
                         }}
                     >
                         {/* Badges */}
                         <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                             {complaint.category && (
-                                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.textMuted, background: '#F0EDE8', padding: '3px 10px', borderRadius: 999 }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.textMuted, background: '#1C1B24', padding: '3px 10px', borderRadius: 999 }}>
                                     {complaint.category}
                                 </span>
                             )}
@@ -191,7 +191,7 @@ export default function ComplaintDetail() {
                             background: C.card,
                             borderRadius: 20,
                             padding: 20,
-                            boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+                            boxShadow: '0 2px 12px rgba(255,255,255,0.06)',
                             marginBottom: 14,
                         }}
                     >
@@ -315,7 +315,7 @@ export default function ComplaintDetail() {
                         width: '100%',
                         maxWidth: 430,
                         padding: '12px 20px',
-                        background: 'linear-gradient(to top, #FFF5EE 70%, transparent)',
+                        background: 'linear-gradient(to top, #0A0A0F 70%, transparent)',
                         zIndex: 30,
                     }}
                 >
@@ -324,7 +324,7 @@ export default function ComplaintDetail() {
                             background: C.card,
                             borderRadius: 16,
                             padding: '14px 16px',
-                            boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                            boxShadow: '0 4px 20px rgba(255,255,255,0.06)',
                         }}
                     >
                         <p style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary, margin: '0 0 12px', textAlign: 'center' }}>

@@ -12,13 +12,13 @@ export interface SlotBookingRequest {
     slot_time: string; // HH:MM
 }
 
+// Matches backend LaundrySlotRead — available slots returned from GET /laundry/slots
 export interface DaySlot {
-    slot_time: string;       // "08:00"
+    id: string;
+    slot_time: string;       // "08:00-09:00"
     machine_id: string;
-    is_available: boolean;
-    is_yours: boolean;
-    booking_id?: string;
-    machine_status?: 'active' | 'repair';
+    booking_status: string;  // 'available' | 'booked' | etc.
+    student_id: string | null;
 }
 
 export async function getMachines(): Promise<MachineRead[]> {

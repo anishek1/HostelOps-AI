@@ -10,19 +10,7 @@ import { isAxiosError } from 'axios';
 import { getMe, setupHostel } from '../../api/authApi';
 import { useAuth } from '../../hooks/useAuth';
 import type { HostelMode } from '../../types/user';
-
-const C = {
-    bg: '#FFF8F4',
-    bgAlt: '#FCF2EB',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
-    inputBg: '#F6ECE5',
-    success: '#16A085',
-    danger: '#E83B2A',
-};
+import { C } from '../../lib/theme';
 
 // ── Reusable field components ────────────────────────────────────────────────
 
@@ -258,7 +246,7 @@ export default function HostelSetup() {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '16px 24px',
-                        background: C.bgAlt,
+                        background: C.bgElevated,
                         position: 'relative',
                         zIndex: 1,
                     }}
@@ -770,7 +758,7 @@ export default function HostelSetup() {
                     background: 'rgba(255,248,244,0.95)',
                     backdropFilter: 'blur(8px)',
                     padding: '12px 24px 28px',
-                    borderTop: '1px solid rgba(0,0,0,0.04)',
+                    borderTop: '1px solid rgba(255,255,255,0.03)',
                 }}
             >
                 <button

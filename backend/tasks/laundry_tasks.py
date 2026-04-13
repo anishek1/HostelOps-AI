@@ -3,32 +3,19 @@ tasks/laundry_tasks.py — HostelOps AI
 ========================================
 Celery tasks for laundry management.
 - process_noshow_penalties: runs hourly, marks overdue booked slots as no_show.
-- send_slot_reminders: runs every 30 minutes, sends reminders for upcoming slots.
-Sprint 5: New task file.
+- send_slot_reminders: runs every 30 min, notifies students before their slot.
+- check_laundry_complaint_clusters: runs every 2h, detects possible machine failures.
 """
-
 import asyncio
 import logging
+from datetime import date, datetime, timedelta, timezone
 
 from celery_app import celery_app
+from database import SyncSessionLocal
+from schemas.enums import LaundrySlotStatus, NotificationType, ComplaintCategory
+from tasks.complaint_tasks import run_async, _create_notification_sync, _get_warden_sync
 
 logger = logging.getLogger(__name__)
-
-
-def run_async(coro):
-    """Run an async coroutine from a synchronous Celery task."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("Loop closed")
-        return loop.run_until_complete(coro)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
 
 
 @celery_app.task(name="tasks.laundry_tasks.process_noshow_penalties", bind=True, max_retries=3)
@@ -53,58 +40,146 @@ def process_noshow_penalties(self):
         raise self.retry(exc=exc, countdown=120)
 
 
-@celery_app.task(name="tasks.laundry_tasks.send_slot_reminders", bind=True, max_retries=2)
-def send_slot_reminders(self):
+@celery_app.task(name="tasks.laundry_tasks.send_slot_reminders")
+def send_slot_reminders():
     """
-    Every-30-minute task: send reminders for slots starting within the next 60 minutes.
-    Placeholder implementation — notifies via logger only.
-    Full implementation deferred to Sprint 6 (requires slot start-time parsing at scale).
+    Runs every 30 minutes.
+    Finds booked slots starting in the next 30 minutes (±5 min window)
+    and sends a reminder notification to each student.
+    slot_time format: "HH:00-(HH+N):00"  e.g. "08:00-10:00"
     """
-    async def _run():
-        from datetime import datetime, timedelta
-        from database import AsyncSessionLocal
-        from models.laundry_slot import LaundrySlot
-        from schemas.enums import LaundrySlotStatus
-        from sqlalchemy import select
+    from sqlalchemy import select
+    from models.laundry_slot import LaundrySlot
 
-        async with AsyncSessionLocal() as db:
-            today = datetime.utcnow().date()
-            result = await db.execute(
-                select(LaundrySlot)
-                .where(LaundrySlot.slot_date == today)
-                .where(LaundrySlot.booking_status == LaundrySlotStatus.booked)
+    now_utc = datetime.now(timezone.utc)
+    # Window: slots starting between now+25min and now+35min
+    window_start = now_utc + timedelta(minutes=25)
+    window_end = now_utc + timedelta(minutes=35)
+    today = now_utc.date()
+
+    logger.info(f"[slot_reminders] Checking for slots starting {window_start.strftime('%H:%M')}–{window_end.strftime('%H:%M')} UTC")
+
+    reminded = 0
+    with SyncSessionLocal() as session:
+        try:
+            result = session.execute(
+                select(LaundrySlot).where(
+                    LaundrySlot.slot_date == today,
+                    LaundrySlot.booking_status == LaundrySlotStatus.booked,
+                    LaundrySlot.student_id.isnot(None),
+                )
             )
             slots = result.scalars().all()
-            # Filter slots starting in next 30-60 minutes
-            now = datetime.utcnow()
-            reminder_count = 0
+
             for slot in slots:
                 if not slot.slot_time:
                     continue
+                # Parse "HH:00-HH:00" → extract start hour
                 try:
-                    start_str = slot.slot_time.split("-")[0]
-                    h, m = map(int, start_str.split(":"))
-                    slot_start = datetime(today.year, today.month, today.day, h, m)
-                    minutes_until = (slot_start - now).total_seconds() / 60
-                    if 30 <= minutes_until <= 60 and slot.student_id:
-                        from services.notification_service import notify_user
-                        from schemas.enums import NotificationType
-                        await notify_user(
-                            recipient_id=slot.student_id,
-                            title="Laundry Slot Reminder",
-                            body=f"Your laundry slot starts at {start_str} today. Don't miss it!",
-                            notification_type=NotificationType.laundry_reminder,
-                            db=db,
-                        )
-                        reminder_count += 1
-                except Exception as e:
-                    logger.warning(f"Could not process reminder for slot {slot.id}: {e}")
+                    start_str = slot.slot_time.split("-")[0]  # "08:00"
+                    slot_hour, slot_minute = int(start_str.split(":")[0]), int(start_str.split(":")[1])
+                    slot_dt = datetime(today.year, today.month, today.day, slot_hour, slot_minute, tzinfo=timezone.utc)
+                except (ValueError, IndexError):
+                    continue
 
-            logger.info(f"[Celery] Slot reminders: sent {reminder_count} reminders")
-            return reminder_count
+                if window_start <= slot_dt <= window_end:
+                    _create_notification_sync(
+                        recipient_id=slot.student_id,
+                        title="Laundry Slot Starting Soon",
+                        body=(
+                            f"Your laundry slot starts at {start_str} today. "
+                            "Please head to the laundry room now."
+                        ),
+                        notification_type=NotificationType.laundry_reminder,
+                        session=session,
+                    )
+                    reminded += 1
 
-    try:
-        return run_async(_run())
-    except Exception as exc:
-        logger.error(f"[Celery] send_slot_reminders failed: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+            session.commit()
+            logger.info(f"[slot_reminders] Sent {reminded} reminders")
+            return {"status": "ok", "reminded": reminded}
+
+        except Exception as exc:
+            session.rollback()
+            logger.error(f"[slot_reminders] Unhandled error: {exc}", exc_info=True)
+            raise
+
+
+@celery_app.task(name="tasks.laundry_tasks.check_laundry_complaint_clusters")
+def check_laundry_complaint_clusters():
+    """
+    Runs every 2 hours.
+    For each hostel, counts laundry complaints filed in the last 24 hours.
+    If the count reaches or exceeds CLUSTER_THRESHOLD (3), alerts the warden —
+    a cluster of laundry complaints likely indicates an unreported machine failure.
+    Only fires the alert once per 24h window (checks if warden was already notified).
+    """
+    from sqlalchemy import select, func
+    from models.complaint import Complaint
+    from models.notification import Notification
+    from models.hostel import Hostel
+
+    CLUSTER_THRESHOLD = 3
+    window = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    logger.info("[laundry_clusters] Checking for laundry complaint clusters")
+
+    with SyncSessionLocal() as session:
+        try:
+            # Count laundry complaints per hostel in the last 24h
+            rows = session.execute(
+                select(Complaint.hostel_id, func.count(Complaint.id).label("cnt"))
+                .where(
+                    Complaint.category == ComplaintCategory.laundry,
+                    Complaint.created_at >= window,
+                    Complaint.hostel_id.isnot(None),
+                )
+                .group_by(Complaint.hostel_id)
+                .having(func.count(Complaint.id) >= CLUSTER_THRESHOLD)
+            ).all()
+
+            if not rows:
+                logger.info("[laundry_clusters] No clusters found")
+                return {"status": "ok", "alerts_sent": 0}
+
+            alerts_sent = 0
+            for hostel_id, count in rows:
+                # Skip if warden already received a cluster alert in the last 24h
+                warden_id = _get_warden_sync(session, hostel_id=hostel_id)
+                if not warden_id:
+                    continue
+
+                already_alerted = session.execute(
+                    select(Notification).where(
+                        Notification.recipient_id == warden_id,
+                        Notification.title == "Possible Machine Failure Detected",
+                        Notification.created_at >= window,
+                    )
+                ).scalar_one_or_none()
+
+                if already_alerted:
+                    logger.info(f"[laundry_clusters] Hostel {hostel_id} — already alerted in 24h window")
+                    continue
+
+                _create_notification_sync(
+                    recipient_id=warden_id,
+                    title="Possible Machine Failure Detected",
+                    body=(
+                        f"{count} laundry complaints have been filed in the last 24 hours. "
+                        "This may indicate an unreported machine breakdown. "
+                        "Please inspect the laundry room and update machine status if needed."
+                    ),
+                    notification_type=NotificationType.machine_down,
+                    session=session,
+                )
+                alerts_sent += 1
+                logger.info(f"[laundry_clusters] Alert sent for hostel {hostel_id} ({count} complaints)")
+
+            session.commit()
+            logger.info(f"[laundry_clusters] Done — {alerts_sent} alerts sent")
+            return {"status": "ok", "alerts_sent": alerts_sent}
+
+        except Exception as exc:
+            session.rollback()
+            logger.error(f"[laundry_clusters] Unhandled error: {exc}", exc_info=True)
+            raise

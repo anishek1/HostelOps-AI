@@ -91,7 +91,7 @@ def check_approval_timeouts():
                     # Notify wardens about the timeout — scoped to complaint's hostel
                     from models.user import User
                     warden_q = select(User).where(
-                        User.role.in_([UserRole.warden, UserRole.chief_warden]),
+                        User.role.in_([UserRole.warden]),
                         User.is_active == True,  # noqa: E712
                     )
                     if complaint.hostel_id is not None:

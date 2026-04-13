@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_WARDEN_ROLES = (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)
+_WARDEN_ROLES = (UserRole.warden,)
 
 
 @router.get("/dashboard", response_model=DashboardMetrics)
@@ -62,7 +62,7 @@ async def get_complaints_analytics(
 async def get_mess_analytics(
     days: int = Query(7, ge=1, le=30),
     current_user: User = Depends(
-        require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden, UserRole.mess_manager)
+        require_role(UserRole.warden, UserRole.mess_staff)
     ),
     db: AsyncSession = Depends(get_db),
 ):
@@ -74,7 +74,7 @@ async def get_mess_analytics(
 async def get_laundry_analytics(
     days: int = Query(7, ge=1, le=30),
     current_user: User = Depends(
-        require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden, UserRole.laundry_man)
+        require_role(UserRole.warden, UserRole.laundry_man)
     ),
     db: AsyncSession = Depends(get_db),
 ):
@@ -86,7 +86,7 @@ async def get_laundry_analytics(
 async def get_override_logs(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    current_user: User = Depends(require_role(UserRole.warden)),
     db: AsyncSession = Depends(get_db),
 ):
     """Recent AI override log entries."""

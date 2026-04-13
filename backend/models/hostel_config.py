@@ -9,7 +9,7 @@ Sprint 7: Multi-tenant (one row per hostel). Fix 16: migrated to mapped_column()
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
@@ -55,7 +55,7 @@ class HostelConfig(Base):
     laundry_cancellation_deadline_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), nullable=True

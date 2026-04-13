@@ -24,8 +24,12 @@ export interface MessRatings {
 
 export interface MessFeedbackCreate {
     meal: MealPeriod;
-    date: string; // ISO date: YYYY-MM-DD
-    ratings: MessRatings;
+    feedback_date: string; // ISO date: YYYY-MM-DD
+    food_quality: number;
+    food_quantity: number;
+    hygiene: number;
+    menu_variety: number;
+    timing: number;
     comment?: string;
 }
 

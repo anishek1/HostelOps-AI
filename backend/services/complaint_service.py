@@ -197,11 +197,8 @@ async def get_complaint(
     # Students can only see their own complaints
     staff_roles = {
         UserRole.laundry_man,
-        UserRole.mess_secretary,
-        UserRole.mess_manager,
-        UserRole.assistant_warden,
+        UserRole.mess_staff,
         UserRole.warden,
-        UserRole.chief_warden,
     }
     if requesting_user_role not in staff_roles:
         if str(complaint.student_id) != requesting_user_id:
@@ -359,7 +356,7 @@ async def get_fallback_warden_id(db: AsyncSession, hostel_id=None) -> Optional[u
     Returns None if no warden exists (run create_admin.py first).
     """
     from models.user import User
-    for role in (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden):
+    for role in (UserRole.warden,):
         query = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
         if hostel_id is not None:
             query = query.where(User.hostel_id == hostel_id)
@@ -555,7 +552,7 @@ async def student_reopen_complaint(
     # Notify assistant wardens
     try:
         await notify_all_by_role(
-            role=UserRole.assistant_warden,
+            role=UserRole.warden,
             title="Complaint Reopened",
             body=(
                 f"Complaint {str(complaint.id)[:8].upper()} has been reopened. "

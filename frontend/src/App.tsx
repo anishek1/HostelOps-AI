@@ -65,7 +65,7 @@ const queryClient = new QueryClient({
 // ── Minimal Suspense fallback (warm cream — no spinners) ──────────────────────
 
 function PageFallback() {
-    return <div style={{ minHeight: '100dvh', background: '#FFF5EE' }} />;
+    return <div style={{ minHeight: '100dvh', background: '#0A0A0F' }} />;
 }
 
 // ── Route declarations ────────────────────────────────────────────────────────

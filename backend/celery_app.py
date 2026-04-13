@@ -21,7 +21,7 @@ celery_app = Celery(
         "tasks.notification_tasks",
         "tasks.approval_tasks",
         "tasks.mess_tasks",
-        "tasks.laundry_tasks",  # Sprint 5
+        "tasks.laundry_tasks",
     ],
 )
 
@@ -56,14 +56,22 @@ celery_app.conf.update(
             "task": "tasks.mess_tasks.check_participation_alert",
             "schedule": 86400.0,  # Daily (every 24 hours)
         },
-        # Sprint 5: Laundry no-show penalty & reminders
         "process-noshow-penalties": {
             "task": "tasks.laundry_tasks.process_noshow_penalties",
             "schedule": 3600.0,  # Every 60 minutes
         },
+        # Phase 4: Proactive monitoring
+        "check-stale-complaints": {
+            "task": "tasks.complaint_tasks.check_stale_complaints",
+            "schedule": 7200.0,  # Every 2 hours
+        },
         "send-slot-reminders": {
             "task": "tasks.laundry_tasks.send_slot_reminders",
             "schedule": 1800.0,  # Every 30 minutes
+        },
+        "check-laundry-complaint-clusters": {
+            "task": "tasks.laundry_tasks.check_laundry_complaint_clusters",
+            "schedule": 7200.0,  # Every 2 hours
         },
     },
 )

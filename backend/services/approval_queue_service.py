@@ -203,6 +203,8 @@ async def override_ai_suggestion(
     complaint.classified_by = ClassifiedBy.warden_override
     complaint.override_reason = reason
     complaint.requires_approval = False
+    # Feedback loop: track warden correction for AI accuracy analytics
+    complaint.warden_corrected_category = corrected_category
     db.add(complaint)
 
     # Transition to ASSIGNED
@@ -272,7 +274,7 @@ async def escalate_complaint(
 
     # Notify all chief wardens
     await notify_all_by_role(
-        role=UserRole.chief_warden,
+        role=UserRole.warden,
         title="Complaint Escalated",
         body=(
             f"Complaint {str(complaint.id)[:8].upper()} has been escalated. "

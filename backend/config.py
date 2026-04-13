@@ -33,11 +33,6 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = ""
     CELERY_RESULT_BACKEND: str = ""
 
-    # --- Push Notifications ---
-    VAPID_PUBLIC_KEY: str = ""
-    VAPID_PRIVATE_KEY: str = ""
-    VAPID_CLAIM_EMAIL: str = ""
-
     # --- Agent Thresholds ---
     COMPLAINT_CONFIDENCE_THRESHOLD: float = 0.85
     MESS_DISSATISFACTION_THRESHOLD: float = 2.5
@@ -64,6 +59,12 @@ class Settings(BaseSettings):
     TOTAL_STUDENTS_CAPACITY: int = 200
     COMPLAINT_RATE_LIMIT_DAILY: int = 5
     LAUNDRY_CANCELLATION_DEADLINE_MINUTES: int = 15
+
+    # --- Embeddings (Phase 5: semantic deduplication) ---
+    HF_API_KEY: str = ""  # HuggingFace Inference API key (free tier). If empty, vector dedup is disabled.
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_DIM: int = 384
+    SIMILARITY_THRESHOLD: float = 0.82  # cosine similarity above this = probable duplicate
 
     # --- CORS ---
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"

@@ -22,7 +22,7 @@ export default function ProtectedRoute({ children, allowedRoles }: Props) {
         // Minimal loading state — SkeletonCard not used here to avoid circular deps
         return (
             <div
-                style={{ minHeight: '100dvh', background: '#FFF5EE' }}
+                style={{ minHeight: '100dvh', background: '#0A0A0F' }}
                 aria-busy="true"
             />
         );

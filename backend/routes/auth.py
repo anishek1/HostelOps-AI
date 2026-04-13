@@ -94,15 +94,6 @@ async def refresh_token(
     """
     user, token_obj = await verify_refresh_token_db(payload.refresh_token, db)
 
-    if token_obj is not None and user is None and token_obj.revoked:
-        # Theft detected — revoked token was reused
-        logger.warning(f"Token theft detected — revoking all tokens for user {token_obj.user_id}")
-        await revoke_all_user_tokens(str(token_obj.user_id), db)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Security alert: this token was already used. All sessions have been invalidated. Please log in again.",
-        )
-
     if not user or not token_obj:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

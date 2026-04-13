@@ -16,7 +16,7 @@ function SkeletonLine({ width = '100%', height = 14 }: { width?: string; height?
                 width,
                 height,
                 borderRadius: 8,
-                background: '#F5F3EF',
+                background: '#1C1B24',
                 flexShrink: 0,
             }}
         />
@@ -34,9 +34,9 @@ export default function SkeletonCard({ lines = 3, className = '' }: SkeletonCard
                 .skeleton-shimmer {
                     background: linear-gradient(
                         90deg,
-                        #F5F3EF 25%,
+                        #1C1B24 25%,
                         #EDE9E4 50%,
-                        #F5F3EF 75%
+                        #1C1B24 75%
                     ) no-repeat;
                     background-size: 800px 100%;
                     animation: skeleton-sweep 1.4s ease-in-out infinite;
@@ -45,7 +45,7 @@ export default function SkeletonCard({ lines = 3, className = '' }: SkeletonCard
             <div
                 className={className}
                 style={{
-                    background: '#FFFFFF',
+                    background: '#13121A',
                     borderRadius: 16,
                     padding: '16px 20px',
                     display: 'flex',

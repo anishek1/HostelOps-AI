@@ -192,11 +192,11 @@ async def check_and_alert(feedback_date: date, db: AsyncSession, hostel_id=None)
         if overall < config.mess_critical_threshold:
             alert_type = AlertType.chronic
             threshold_msg = f"avg_overall < {config.mess_critical_threshold} (CRITICAL)"
-            notify_roles = [UserRole.mess_manager, UserRole.warden]
+            notify_roles = [UserRole.mess_staff, UserRole.warden]
         elif overall < config.mess_alert_threshold:
             alert_type = AlertType.spike
             threshold_msg = f"avg_overall < {config.mess_alert_threshold}"
-            notify_roles = [UserRole.mess_manager]
+            notify_roles = [UserRole.mess_staff]
         else:
             continue
 
@@ -271,7 +271,7 @@ async def check_participation_alert(db: AsyncSession, hostel_id=None) -> None:
 
     if low_days >= 3:
         await notify_all_by_role(
-            role=UserRole.assistant_warden,
+            role=UserRole.warden,
             title="Low Mess Feedback Participation",
             body=(
                 f"Mess feedback participation has been below "

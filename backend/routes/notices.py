@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-WARDEN_ROLES = (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)
+WARDEN_ROLES = (UserRole.warden,)
 
 
 @router.post("/", response_model=NoticeRead, status_code=status.HTTP_201_CREATED)

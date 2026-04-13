@@ -10,36 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import AppShell from '../../components/AppShell';
 import { getMyComplaints } from '../../api/complaintsApi';
 import { getNotifications } from '../../api/notificationsApi';
-import type { ComplaintStatus } from '../../types/complaint';
-
-const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
-    primaryLight: 'rgba(70,71,211,0.10)',
-    primaryContainer: 'rgba(70,71,211,0.12)',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
-    danger: '#E83B2A',
-    dangerLight: 'rgba(232,59,42,0.08)',
-    success: '#1A9B6C',
-    successLight: 'rgba(26,155,108,0.10)',
-    amber: '#D48C00',
-    amberLight: 'rgba(255,184,0,0.10)',
-    border: 'rgba(0,0,0,0.06)',
-};
-
-const STATUS_COLORS: Record<ComplaintStatus, { bg: string; text: string; label: string }> = {
-    INTAKE:           { bg: C.primaryLight, text: C.primary, label: 'Intake' },
-    CLASSIFIED:       { bg: C.primaryLight, text: C.primary, label: 'Classified' },
-    AWAITING_APPROVAL:{ bg: C.amberLight,   text: C.amber,   label: 'Pending' },
-    ASSIGNED:         { bg: C.primaryLight, text: C.primary, label: 'Assigned' },
-    IN_PROGRESS:      { bg: C.primaryLight, text: C.primary, label: 'In Progress' },
-    RESOLVED:         { bg: C.successLight, text: C.success, label: 'Resolved' },
-    REOPENED:         { bg: C.amberLight,   text: C.amber,   label: 'Reopened' },
-    ESCALATED:        { bg: C.dangerLight,  text: C.danger,  label: 'Escalated' },
-};
+import { C, STATUS_COLORS, chipStyle } from '../../lib/theme';
 
 function getGreeting() {
     const h = new Date().getHours();
@@ -69,8 +40,8 @@ function relativeTime(iso: string) {
 
 const QUICK_ACTIONS = [
     { label: 'Complaint', icon: 'chat_bubble', to: '/student/complaints/new', color: C.primary, bg: C.primaryContainer },
-    { label: 'Laundry',   icon: 'local_laundry_service', to: '/student/laundry', color: '#1A9B6C', bg: 'rgba(26,155,108,0.12)' },
-    { label: 'Mess',      icon: 'restaurant', to: '/student/mess', color: '#D48C00', bg: 'rgba(212,140,0,0.12)' },
+    { label: 'Laundry',   icon: 'local_laundry_service', to: '/student/laundry', color: C.accent, bg: C.accentLight },
+    { label: 'Mess',      icon: 'restaurant', to: '/student/mess', color: C.warning, bg: C.warningLight },
 ];
 
 export default function StudentHome() {
@@ -93,11 +64,19 @@ export default function StudentHome() {
     const name = user?.name ?? 'Student';
 
     const notifIconMap: Record<string, string> = {
-        complaint_update: 'chat_bubble',
-        laundry_reminder: 'local_laundry_service',
-        mess_alert: 'restaurant',
-        approval: 'how_to_reg',
-        system: 'notifications',
+        complaint_assigned:    'assignment_ind',
+        complaint_resolved:    'check_circle',
+        complaint_escalated:   'warning',
+        complaint_reopened:    'refresh',
+        approval_needed:       'how_to_reg',
+        registration_pending:  'pending_actions',
+        registration_approved: 'verified_user',
+        registration_rejected: 'person_off',
+        mess_alert:            'restaurant',
+        laundry_reminder:      'local_laundry_service',
+        machine_down:          'build',
+        password_reset:        'lock_reset',
+        account_deactivated:   'block',
     };
 
     return (
@@ -151,7 +130,7 @@ export default function StudentHome() {
                         style={{
                             position: 'relative',
                             background: C.card,
-                            border: 'none',
+                            border: `1px solid ${C.border}`,
                             borderRadius: '50%',
                             width: 40,
                             height: 40,
@@ -159,7 +138,6 @@ export default function StudentHome() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             cursor: 'pointer',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                         }}
                     >
                         <span className="material-symbols-outlined" style={{ fontSize: 22, color: C.textSecondary }}>
@@ -201,14 +179,14 @@ export default function StudentHome() {
                                             display: 'flex',
                                             gap: 12,
                                             alignItems: 'flex-start',
-                                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                            border: `1px solid ${C.border}`,
                                         }}
                                     >
                                         <div
                                             style={{
-                                                width: 36,
-                                                height: 36,
-                                                borderRadius: '50%',
+                                                width: 44,
+                                                height: 44,
+                                                borderRadius: 14,
                                                 background: C.primaryLight,
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -216,8 +194,8 @@ export default function StudentHome() {
                                                 flexShrink: 0,
                                             }}
                                         >
-                                            <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.primary }}>
-                                                {notifIconMap[n.notification_type] ?? 'notifications'}
+                                            <span className="material-symbols-outlined" style={{ fontSize: 20, color: C.primary }}>
+                                                {notifIconMap[n.type] ?? 'notifications'}
                                             </span>
                                         </div>
                                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -239,8 +217,8 @@ export default function StudentHome() {
 
                     {/* Quick Actions */}
                     <section style={{ marginBottom: 28 }}>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.10em', textTransform: 'uppercase', margin: '0 0 12px' }}>
-                            Quick Actions
+                        <p style={{ fontSize: 18, fontWeight: 800, color: C.textPrimary, margin: '0 0 14px' }}>
+                            What do you need?
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
                             {QUICK_ACTIONS.map((a) => (
@@ -252,13 +230,14 @@ export default function StudentHome() {
                                     <div
                                         style={{
                                             background: C.card,
-                                            borderRadius: 16,
-                                            padding: '16px 8px',
+                                            borderRadius: 24,
+                                            aspectRatio: '1',
                                             display: 'flex',
                                             flexDirection: 'column',
                                             alignItems: 'center',
+                                            justifyContent: 'center',
                                             gap: 10,
-                                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                            border: `1px solid ${C.border}`,
                                         }}
                                     >
                                         <div
@@ -305,7 +284,7 @@ export default function StudentHome() {
                                 width: 44,
                                 height: 44,
                                 borderRadius: '50%',
-                                background: 'rgba(70,71,211,0.15)',
+                                background: C.primaryLight,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -349,7 +328,7 @@ export default function StudentHome() {
                                     borderRadius: 16,
                                     padding: '32px 20px',
                                     textAlign: 'center',
-                                    boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                    border: `1px solid ${C.border}`,
                                 }}
                             >
                                 <span className="material-symbols-outlined" style={{ fontSize: 36, color: C.textMuted, display: 'block', marginBottom: 10 }}>
@@ -370,21 +349,14 @@ export default function StudentHome() {
                                                     background: C.card,
                                                     borderRadius: 14,
                                                     padding: '14px 16px',
-                                                    boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                                    border: `1px solid ${C.border}`,
                                                 }}
                                             >
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                                                     {c.category && (
                                                         <span
                                                             style={{
-                                                                fontSize: 10,
-                                                                fontWeight: 700,
-                                                                letterSpacing: '0.07em',
-                                                                textTransform: 'uppercase',
-                                                                color: C.textMuted,
-                                                                background: '#F0EDE8',
-                                                                padding: '2px 8px',
-                                                                borderRadius: 999,
+                                                                ...chipStyle(C.bgElevated, C.textMuted),
                                                             }}
                                                         >
                                                             {c.category}
@@ -392,14 +364,7 @@ export default function StudentHome() {
                                                     )}
                                                     <span
                                                         style={{
-                                                            fontSize: 10,
-                                                            fontWeight: 700,
-                                                            letterSpacing: '0.07em',
-                                                            textTransform: 'uppercase',
-                                                            color: s.text,
-                                                            background: s.bg,
-                                                            padding: '2px 8px',
-                                                            borderRadius: 999,
+                                                            ...chipStyle(s.bg, s.text),
                                                         }}
                                                     >
                                                         {s.label}

@@ -3,34 +3,33 @@
  * TypeScript types mirroring backend laundry slot and machine schemas.
  */
 
-export type SlotStatus = 'booked' | 'cancelled' | 'completed' | 'no_show';
+export type SlotStatus = 'available' | 'booked' | 'cancelled' | 'completed' | 'no_show';
 
 export interface LaundrySlotCreate {
     machine_id: string;
-    date: string; // ISO date: YYYY-MM-DD
-    start_time: string; // HH:MM
-    end_time: string; // HH:MM
+    slot_date: string; // YYYY-MM-DD
+    slot_time: string; // HH:MM
 }
 
 export interface LaundrySlotRead {
     id: string;
     machine_id: string;
-    student_id: string;
-    date: string;
-    start_time: string;
-    end_time: string;
-    status: SlotStatus;
-    is_priority: boolean;
-    priority_reason: string | null;
-    priority_approved_by: string | null;
+    student_id: string | null;
+    slot_date: string;
+    slot_time: string;
+    booking_status: SlotStatus;
+    priority_score: number | null;
+    booked_at: string | null;
+    completed_at: string | null;
     created_at: string;
 }
 
 export interface MachineRead {
     id: string;
     name: string;
+    floor: number | null;
+    status: string;
     is_active: boolean;
     last_reported_issue: string | null;
-    repaired_at: string | null;
     created_at: string;
 }

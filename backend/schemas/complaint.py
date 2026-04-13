@@ -21,6 +21,7 @@ from schemas.enums import (
 class ComplaintCreate(BaseModel):
     text: str = Field(..., min_length=10, max_length=1000)
     is_anonymous: bool = False
+    category: ComplaintCategory | None = None  # optional pre-selection from frontend dropdown
 
 
 class ComplaintTemplateRead(BaseModel):
@@ -39,13 +40,18 @@ class ComplaintRead(BaseModel):
     severity: ComplaintSeverity | None
     status: ComplaintStatus
     assigned_to: str | None
-    confidence_score: float | None
+    urgency: int | None = None
+    affected_count: int | None = None
+    location: str | None = None
+    safety_flag: bool | None = None
+    language_detected: str | None = None
     ai_suggested_category: ComplaintCategory | None
     ai_suggested_assignee: str | None
     requires_approval: bool
     classified_by: ClassifiedBy
     override_reason: OverrideReason | None
     flagged_input: str | None
+    warden_corrected_category: ComplaintCategory | None = None
     resolved_confirmed_at: datetime | None = None
     reopen_reason: str | None = None
     is_priority: bool = False
@@ -69,7 +75,10 @@ class ComplaintReadAnonymous(BaseModel):
     severity: ComplaintSeverity | None
     status: ComplaintStatus
     assigned_to: str | None
-    confidence_score: float | None
+    urgency: int | None = None
+    affected_count: int | None = None
+    location: str | None = None
+    safety_flag: bool | None = None
     requires_approval: bool
     classified_by: ClassifiedBy
     resolved_confirmed_at: datetime | None = None

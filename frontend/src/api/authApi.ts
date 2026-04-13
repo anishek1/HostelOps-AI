@@ -9,6 +9,7 @@ import type {
     HostelSetupResponse,
     LoginRequest,
     LoginResponse,
+    Token,
     UserCreate,
     UserRead,
 } from '../types/user';
@@ -24,8 +25,8 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
     return res.data;
 }
 
-export async function refreshTokens(refreshToken: string): Promise<LoginResponse> {
-    const res = await client.post<LoginResponse>('/auth/refresh', { refresh_token: refreshToken });
+export async function refreshTokens(refreshToken: string): Promise<Token> {
+    const res = await client.post<Token>('/auth/refresh', { refresh_token: refreshToken });
     return res.data;
 }
 

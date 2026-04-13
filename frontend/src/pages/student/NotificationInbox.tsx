@@ -3,35 +3,42 @@
  * Unread (colored borders) + Earlier sections, mark all read.
  */
 
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppShell from '../../components/AppShell';
 import { getNotifications, markRead, markAllRead } from '../../api/notificationsApi';
 import type { NotificationRead, NotificationType } from '../../types/notification';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
+    textMuted: '#6B6B80',
+    card: '#13121A',
     danger: '#E83B2A',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.10)',
     amber: '#D48C00',
     amberLight: 'rgba(212,140,0,0.10)',
     dimCard: '#FAFAF8',
-    border: 'rgba(0,0,0,0.06)',
+    border: 'rgba(255,255,255,0.06)',
 };
 
 const TYPE_CONFIG: Record<NotificationType, { icon: string; dot: string; border: string; iconBg: string; iconColor: string }> = {
-    complaint_update: { icon: 'chat_bubble', dot: C.primary, border: C.primary, iconBg: C.primaryLight, iconColor: C.primary },
-    laundry_reminder: { icon: 'local_laundry_service', dot: C.success, border: C.success, iconBg: C.successLight, iconColor: C.success },
-    mess_alert:       { icon: 'restaurant', dot: C.amber, border: C.amber, iconBg: C.amberLight, iconColor: C.amber },
-    approval:         { icon: 'how_to_reg', dot: C.primary, border: C.primary, iconBg: C.primaryLight, iconColor: C.primary },
-    system:           { icon: 'notifications', dot: C.textMuted, border: C.textMuted, iconBg: '#F0EDE8', iconColor: C.textMuted },
+    complaint_assigned:    { icon: 'assignment_ind',        dot: C.primary, border: C.primary, iconBg: C.primaryLight, iconColor: C.primary },
+    complaint_resolved:    { icon: 'check_circle',          dot: C.success, border: C.success, iconBg: C.successLight, iconColor: C.success },
+    complaint_escalated:   { icon: 'warning',               dot: C.danger,  border: C.danger,  iconBg: 'rgba(232,59,42,0.08)', iconColor: C.danger },
+    complaint_reopened:    { icon: 'refresh',               dot: C.amber,   border: C.amber,   iconBg: C.amberLight, iconColor: C.amber },
+    approval_needed:       { icon: 'how_to_reg',            dot: C.primary, border: C.primary, iconBg: C.primaryLight, iconColor: C.primary },
+    registration_pending:  { icon: 'pending_actions',       dot: C.amber,   border: C.amber,   iconBg: C.amberLight, iconColor: C.amber },
+    registration_approved: { icon: 'verified_user',         dot: C.success, border: C.success, iconBg: C.successLight, iconColor: C.success },
+    registration_rejected: { icon: 'person_off',            dot: C.danger,  border: C.danger,  iconBg: 'rgba(232,59,42,0.08)', iconColor: C.danger },
+    mess_alert:            { icon: 'restaurant',            dot: C.amber,   border: C.amber,   iconBg: C.amberLight, iconColor: C.amber },
+    laundry_reminder:      { icon: 'local_laundry_service', dot: C.success, border: C.success, iconBg: C.successLight, iconColor: C.success },
+    machine_down:          { icon: 'build',                 dot: C.danger,  border: C.danger,  iconBg: 'rgba(232,59,42,0.08)', iconColor: C.danger },
+    password_reset:        { icon: 'lock_reset',            dot: C.textMuted, border: C.textMuted, iconBg: '#1C1B24', iconColor: C.textMuted },
+    account_deactivated:   { icon: 'block',                 dot: C.danger,  border: C.danger,  iconBg: 'rgba(232,59,42,0.08)', iconColor: C.danger },
 };
 
 function relativeTime(iso: string) {
@@ -53,7 +60,7 @@ function NotifCard({
     unread: boolean;
     onRead: (id: string) => void;
 }) {
-    const cfg = TYPE_CONFIG[n.notification_type] ?? TYPE_CONFIG.system;
+    const cfg = TYPE_CONFIG[n.type] ?? TYPE_CONFIG.account_deactivated;
 
     return (
         <div
@@ -68,16 +75,16 @@ function NotifCard({
                 borderLeft: unread ? `3px solid ${cfg.border}` : 'none',
                 opacity: unread ? 1 : 0.80,
                 cursor: unread ? 'pointer' : 'default',
-                boxShadow: unread ? '0 1px 6px rgba(0,0,0,0.05)' : 'none',
+                boxShadow: unread ? '0 1px 6px rgba(255,255,255,0.06)' : 'none',
             }}
         >
-            {/* Icon circle */}
+            {/* Icon */}
             <div
                 style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: '50%',
-                    background: cfg.iconBg,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: '#1C1B24',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -118,7 +125,6 @@ function NotifCard({
 }
 
 export default function NotificationInbox() {
-    const navigate = useNavigate();
     const qc = useQueryClient();
 
     const { data: notifications = [], isLoading } = useQuery({
@@ -156,15 +162,7 @@ export default function NotificationInbox() {
                         justifyContent: 'space-between',
                     }}
                 >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <button
-                            onClick={() => navigate(-1)}
-                            style={{ background: C.card, border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-                        >
-                            <span className="material-symbols-outlined" style={{ fontSize: 20, color: C.textPrimary }}>arrow_back</span>
-                        </button>
-                        <h1 style={{ fontSize: 20, fontWeight: 700, color: C.textPrimary, margin: 0 }}>Notifications</h1>
-                    </div>
+                    <h1 style={{ fontSize: 22, fontWeight: 800, color: C.textPrimary, margin: 0 }}>Notifications</h1>
                     {hasUnread && (
                         <button
                             onClick={() => readAllMutation.mutate()}
@@ -193,7 +191,7 @@ export default function NotificationInbox() {
                             ))}
                         </div>
                     ) : notifications.length === 0 ? (
-                        <div style={{ background: C.card, borderRadius: 16, padding: '48px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
+                        <div style={{ background: C.card, borderRadius: 16, padding: '48px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(255,255,255,0.03)' }}>
                             <span className="material-symbols-outlined" style={{ fontSize: 40, color: C.textMuted, display: 'block', marginBottom: 12 }}>notifications_none</span>
                             <p style={{ fontSize: 14, color: C.textSecondary, margin: 0 }}>All quiet — no notifications yet.</p>
                         </div>

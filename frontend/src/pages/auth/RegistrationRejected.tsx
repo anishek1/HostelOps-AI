@@ -5,15 +5,7 @@
  */
 
 import { Link, useLocation } from 'react-router-dom';
-
-const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    card: '#FFFFFF',
-    danger: '#E83B2A',
-};
+import { C } from '../../lib/theme';
 
 interface LocationState {
     reason?: string | null;

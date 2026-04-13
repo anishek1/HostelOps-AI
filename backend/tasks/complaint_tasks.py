@@ -8,11 +8,10 @@ Implements full retry policy and fallback chain from PRD.md Section 10.
 import asyncio
 import logging
 import uuid
-import logging
+
 logger = logging.getLogger(__name__)
 
 from celery_app import celery_app
-from config import settings
 from database import SyncSessionLocal
 from schemas.enums import (
     ClassifiedBy,
@@ -23,8 +22,6 @@ from schemas.enums import (
     UserRole,
 )
 from services.complaint_service import VALID_TRANSITIONS
-
-import asyncio
 
 def run_async(coro):
     """
@@ -57,10 +54,10 @@ def _get_complaint_sync(complaint_id: str, session):
 
 
 def _get_warden_sync(session, hostel_id=None):
-    """Return UUID of any active warden/assistant_warden for approval queue, scoped to hostel."""
+    """Return UUID of any active warden for approval queue, scoped to hostel."""
     from sqlalchemy import select
     from models.user import User
-    for role in (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden):
+    for role in (UserRole.warden,):
         q = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
         if hostel_id is not None:
             q = q.where(User.hostel_id == hostel_id)
@@ -77,14 +74,14 @@ def _find_assignee_sync(category: ComplaintCategory, session, hostel_id=None):
     from models.user import User
 
     role_map = {
-        ComplaintCategory.mess: [UserRole.mess_secretary, UserRole.mess_manager],
+        ComplaintCategory.mess: [UserRole.mess_staff],
         ComplaintCategory.laundry: [UserRole.laundry_man],
-        ComplaintCategory.maintenance: [UserRole.assistant_warden],
-        ComplaintCategory.interpersonal: [UserRole.assistant_warden, UserRole.warden],
-        ComplaintCategory.critical: [UserRole.warden, UserRole.chief_warden],
-        ComplaintCategory.uncategorised: [UserRole.assistant_warden],
+        ComplaintCategory.maintenance: [UserRole.warden],
+        ComplaintCategory.interpersonal: [UserRole.warden],
+        ComplaintCategory.critical: [UserRole.warden],
+        ComplaintCategory.uncategorised: [UserRole.warden],
     }
-    target_roles = role_map.get(category, [UserRole.assistant_warden])
+    target_roles = role_map.get(category, [UserRole.warden])
     for role in target_roles:
         q = select(User).where(User.role == role, User.is_active == True)  # noqa: E712
         if hostel_id is not None:
@@ -166,7 +163,7 @@ def _notify_wardens_flagged_input_sync(complaint_id: str, session, hostel_id=Non
         from sqlalchemy import select
         from models.user import User
         q = select(User).where(
-            User.role.in_([UserRole.assistant_warden, UserRole.warden]),
+            User.role.in_([UserRole.warden]),
             User.is_active == True,  # noqa: E712
         )
         if hostel_id is not None:
@@ -201,13 +198,14 @@ def classify_and_route_complaint(self, complaint_id: str):
     Full classification pipeline for a single complaint.
 
     Flow:
-    1. Fetch complaint from DB
-    2. Send student acknowledgement FIRST
-    3. Try LLM classification (up to 3 retries with backoff via Celery)
-    4. If LLM fails → use fallback classifier
-    5. If confidence >= threshold AND severity != high → auto-assign
-    6. If confidence < threshold OR severity == high → approval queue
-    7. If injection was flagged → passive alert to Warden
+    1. Fetch complaint
+    2. Acknowledge student immediately
+    3. Try LLM extraction (category, severity, urgency, affected_count, location, safety_flag, language)
+    4. If LLM fails → use keyword fallback classifier
+    5. Deterministic routing:
+       - interpersonal / critical / safety_flag=True / fallback → approval queue
+       - everything else → auto-assign
+    6. If injection was flagged → alert warden
     """
     from services.fallback_classifier import classify_with_fallback
 
@@ -221,14 +219,13 @@ def classify_and_route_complaint(self, complaint_id: str):
                 logger.error(f"[classify_task] Complaint {complaint_id} not found — aborting.")
                 return {"status": "error", "reason": "complaint_not_found"}
 
-            # Step 2 — Send acknowledgement FIRST (before LLM)
-            # Use sync notification directly — acknowledge_student_tool is async and requires AsyncSession
+            # Step 2 — Acknowledge student immediately (before LLM)
             if not complaint.is_anonymous:
                 _create_notification_sync(
                     recipient_id=complaint.student_id,
                     title="Complaint Received",
                     body=(
-                        f"Your complaint (ID: {complaint_id[:8]}...) has been received "
+                        f"Your complaint (ID: {complaint_id[:8].upper()}) has been received "
                         "and is being reviewed. You will be notified once it is assigned."
                     ),
                     notification_type=NotificationType.complaint_assigned,
@@ -236,68 +233,99 @@ def classify_and_route_complaint(self, complaint_id: str):
                 )
             session.commit()
 
-            # Step 3 — Try LLM classification
+            # Step 3 — Try LLM extraction
             llm_result = None
             complaint_text = complaint.sanitized_text or complaint.text
 
+            # If frontend sent a category pre-selection, honour it and skip LLM category extraction
+            pre_selected_category = complaint.category
+
             try:
-                # Run the async LLM call inside a new event loop
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    from agents.agent_complaint import classify_complaint
+                    from agents.complaint_classifier import classify_complaint
                     llm_result = loop.run_until_complete(classify_complaint(complaint_text))
                 finally:
                     loop.close()
             except Exception as llm_err:
                 logger.warning(f"[classify_task] LLM call error: {llm_err}")
 
-            # Step 4 — Determine classification
+            # Step 4 — Build classification from LLM result or fallback
             if llm_result is not None:
                 classified_by = ClassifiedBy.llm
                 try:
-                    category = ComplaintCategory(llm_result.category)
+                    category = pre_selected_category or ComplaintCategory(llm_result.category)
                 except ValueError:
                     category = ComplaintCategory.uncategorised
                 try:
                     severity = ComplaintSeverity(llm_result.severity)
                 except ValueError:
                     severity = ComplaintSeverity.medium
-                confidence = llm_result.confidence
+                urgency = llm_result.urgency
+                affected_count = llm_result.affected_count
+                location = llm_result.location
+                safety_flag = llm_result.safety_flag
+                language_detected = llm_result.language_detected
                 logger.info(
                     f"[classify_task] LLM result: category={category.value}, "
-                    f"severity={severity.value}, confidence={confidence:.2f}"
+                    f"severity={severity.value}, urgency={urgency}, "
+                    f"affected={affected_count}, safety={safety_flag}"
                 )
             else:
-                # Fallback classifier
                 classified_by = ClassifiedBy.fallback
                 fallback = classify_with_fallback(complaint_text)
-                category = fallback.category
+                category = pre_selected_category or fallback.category
                 severity = fallback.severity
-                confidence = 0.0
+                urgency = fallback.urgency
+                affected_count = fallback.affected_count
+                location = fallback.location
+                safety_flag = fallback.safety_flag
+                language_detected = fallback.language_detected
                 logger.info(
-                    f"[classify_task] Fallback result: category={category.value}, "
-                    f"severity={severity.value}"
+                    f"[classify_task] Fallback result: category={category.value}, severity={severity.value}"
                 )
 
-            # Update classification fields on complaint
+            # Update all extraction fields on complaint
             complaint.category = category
             complaint.severity = severity
             complaint.classified_by = classified_by
-            complaint.confidence_score = confidence
             complaint.ai_suggested_category = category
+            complaint.urgency = urgency
+            complaint.affected_count = affected_count
+            complaint.location = location
+            complaint.safety_flag = safety_flag
+            complaint.language_detected = language_detected
+
+            # Phase 5 — Generate embedding for semantic deduplication (non-blocking)
+            try:
+                from services.embedding_service import generate_embedding
+                loop_emb = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop_emb)
+                try:
+                    emb = loop_emb.run_until_complete(generate_embedding(complaint_text))
+                    if emb is not None:
+                        complaint.embedding = emb
+                        logger.info(f"[classify_task] Embedding generated for {complaint_id}")
+                finally:
+                    loop_emb.close()
+            except Exception as emb_err:
+                logger.warning(f"[classify_task] Embedding generation failed (non-critical): {emb_err}")
+
             session.flush()
 
-            # Step 5/6 — Route based on confidence and severity
-            threshold = settings.COMPLAINT_CONFIDENCE_THRESHOLD
+            # Step 5 — Deterministic routing (no fake confidence scores)
+            # Always send to approval queue if:
+            # - category is interpersonal or critical (sensitive, human must review)
+            # - safety flag set (health/safety risk detected)
+            # - classified by fallback (LLM was unavailable, human should confirm)
             needs_approval = (
-                severity == ComplaintSeverity.high
-                or confidence < threshold
+                category in (ComplaintCategory.interpersonal, ComplaintCategory.critical)
+                or safety_flag is True
                 or classified_by == ClassifiedBy.fallback
             )
 
             if needs_approval:
-                # Route to approval queue
                 warden_id = _get_warden_sync(session, hostel_id=complaint.hostel_id)
                 if not warden_id:
                     logger.error(
@@ -311,35 +339,35 @@ def classify_and_route_complaint(self, complaint_id: str):
                 complaint.requires_approval = True
                 session.flush()
 
-                # Create approval queue item
                 from models.approval_queue import ApprovalQueueItem
                 queue_item = ApprovalQueueItem(
                     complaint_id=uuid.UUID(complaint_id),
                     ai_suggested_category=category,
                     ai_suggested_severity=severity,
                     ai_suggested_assignee=warden_id,
-                    confidence_score=confidence,
+                    confidence_score=None,
                 )
                 session.add(queue_item)
                 session.flush()
 
-                # Transition INTAKE → CLASSIFIED → AWAITING_APPROVAL
                 _transition_complaint_sync(
                     complaint_id, ComplaintStatus.INTAKE, ComplaintStatus.CLASSIFIED,
                     "system", session, note=f"Classified as {category.value}"
                 )
                 _transition_complaint_sync(
                     complaint_id, ComplaintStatus.CLASSIFIED, ComplaintStatus.AWAITING_APPROVAL,
-                    "system", session, note=f"Sent to approval queue (confidence={confidence:.2f})"
+                    "system", session,
+                    note=f"Needs approval: category={category.value}, safety={safety_flag}, by={classified_by.value}"
                 )
 
-                # Notify the warden
                 _create_notification_sync(
                     recipient_id=warden_id,
                     title="Complaint Needs Review",
                     body=(
                         f"A {category.value} complaint requires your approval. "
-                        f"Severity: {severity.value}. Classified by: {classified_by.value}."
+                        f"Severity: {severity.value}. "
+                        f"{'⚠️ Safety flag raised. ' if safety_flag else ''}"
+                        f"Classified by: {classified_by.value}."
                     ),
                     notification_type=NotificationType.approval_needed,
                     session=session,
@@ -347,12 +375,11 @@ def classify_and_route_complaint(self, complaint_id: str):
                 logger.info(f"[classify_task] Complaint {complaint_id} → AWAITING_APPROVAL")
 
             else:
-                # Auto-assign
                 assignee_id = _find_assignee_sync(category, session, hostel_id=complaint.hostel_id)
                 if not assignee_id:
                     assignee_id = _get_warden_sync(session, hostel_id=complaint.hostel_id)
                 if not assignee_id:
-                    logger.error("[classify_task] No assignee found — falling back to approval queue.")
+                    logger.error("[classify_task] No assignee found — no warden exists.")
                     session.commit()
                     return {"status": "error", "reason": "no_assignee_found"}
 
@@ -360,7 +387,6 @@ def classify_and_route_complaint(self, complaint_id: str):
                 complaint.requires_approval = False
                 session.flush()
 
-                # Transition INTAKE → CLASSIFIED → ASSIGNED
                 _transition_complaint_sync(
                     complaint_id, ComplaintStatus.INTAKE, ComplaintStatus.CLASSIFIED,
                     "system", session, note=f"Classified as {category.value}"
@@ -370,7 +396,6 @@ def classify_and_route_complaint(self, complaint_id: str):
                     "system", session, note=f"Auto-assigned by {classified_by.value}"
                 )
 
-                # Notify the assigned staff
                 _create_notification_sync(
                     recipient_id=assignee_id,
                     title="New Complaint Assigned",
@@ -380,22 +405,36 @@ def classify_and_route_complaint(self, complaint_id: str):
                 )
                 logger.info(f"[classify_task] Complaint {complaint_id} → ASSIGNED to {assignee_id}")
 
-            # Step 7 — Flagged injection alert
+            # Step 6 — Flagged injection alert
             if complaint.flagged_input:
                 _notify_wardens_flagged_input_sync(complaint_id, session, hostel_id=complaint.hostel_id)
 
-            # Step 8 — Route to Agent 2 (Laundry) or Agent 3 (Mess) if applicable
-            # We delay these tasks *before* commit but Celery's task_acks_late/track_started 
-            # and default transaction isolation mean it's safest if the complaint is committed first.
-            # However, since they run asynchronously, by the time they start, the commit usually finishes.
-            # Actually, doing it after commit is safer for DB visibility. Let's place it right after commit.
             session.commit()
 
-            # Trigger Sprint 4 Agents asynchronously
-            if category == ComplaintCategory.laundry:
-                route_to_laundry_agent.delay(complaint_id)
-            elif category == ComplaintCategory.mess:
-                route_to_mess_agent.delay(complaint_id)
+            # Step 7 — Fire agent task for actionable complaints (async, non-blocking)
+            # Triggers when: laundry/maintenance category OR multiple students affected
+            # Does NOT fire for complaints going to approval queue (warden handles those)
+            agent_eligible = (
+                not needs_approval
+                and category in (ComplaintCategory.laundry, ComplaintCategory.maintenance)
+                or (affected_count is not None and affected_count > 1 and not needs_approval)
+            )
+            if agent_eligible:
+                celery_app.send_task(
+                    "tasks.complaint_tasks.run_complaint_agent_task",
+                    kwargs=dict(
+                        complaint_id=complaint_id,
+                        student_id=str(complaint.student_id),
+                        hostel_id=str(complaint.hostel_id) if complaint.hostel_id else "",
+                        category=category.value,
+                        severity=severity.value,
+                        affected_count=affected_count or 1,
+                        location=location,
+                        safety_flag=bool(safety_flag),
+                        complaint_text=complaint.sanitized_text or complaint.text,
+                    ),
+                )
+                logger.info(f"[classify_task] Agent task queued for complaint {complaint_id}")
 
             return {
                 "status": "success",
@@ -403,6 +442,8 @@ def classify_and_route_complaint(self, complaint_id: str):
                 "classified_by": classified_by.value,
                 "category": category.value,
                 "severity": severity.value,
+                "needs_approval": needs_approval,
+                "agent_queued": agent_eligible,
             }
 
         except Exception as exc:
@@ -412,82 +453,141 @@ def classify_and_route_complaint(self, complaint_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Sprint 4: Laundry & Mess Agent Routing Tasks
-# Called by classify_and_route_complaint when category = laundry/mess
+# Proactive task: check_stale_complaints
+# ---------------------------------------------------------------------------
+
+@celery_app.task(name="tasks.complaint_tasks.check_stale_complaints")
+def check_stale_complaints():
+    """
+    Runs every 2 hours.
+    Finds complaints in ASSIGNED or IN_PROGRESS for more than 48 hours
+    and escalates them to the warden with a notification.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select
+    from models.complaint import Complaint
+    from models.user import User
+
+    STALE_HOURS = 48
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_HOURS)
+
+    logger.info(f"[stale_complaints] Checking for complaints stale > {STALE_HOURS}h")
+
+    with SyncSessionLocal() as session:
+        try:
+            result = session.execute(
+                select(Complaint).where(
+                    Complaint.status.in_([ComplaintStatus.ASSIGNED, ComplaintStatus.IN_PROGRESS]),
+                    Complaint.updated_at < cutoff,
+                )
+            )
+            stale = result.scalars().all()
+
+            if not stale:
+                logger.info("[stale_complaints] No stale complaints found")
+                return {"status": "ok", "escalated": 0}
+
+            escalated = 0
+            for complaint in stale:
+                try:
+                    warden_id = _get_warden_sync(session, hostel_id=complaint.hostel_id)
+                    if not warden_id:
+                        continue
+
+                    _transition_complaint_sync(
+                        complaint_id=str(complaint.id),
+                        from_state=complaint.status,
+                        to_state=ComplaintStatus.ESCALATED,
+                        triggered_by="system:stale",
+                        session=session,
+                        note=f"Auto-escalated — unresolved for >{STALE_HOURS}h",
+                    )
+                    _create_notification_sync(
+                        recipient_id=warden_id,
+                        title="Stale Complaint Escalated",
+                        body=(
+                            f"Complaint {str(complaint.id)[:8].upper()} has been "
+                            f"unresolved for over {STALE_HOURS} hours and has been escalated."
+                        ),
+                        notification_type=NotificationType.complaint_escalated,
+                        session=session,
+                    )
+                    escalated += 1
+                    logger.info(f"[stale_complaints] Escalated complaint {complaint.id}")
+                except Exception as e:
+                    logger.error(f"[stale_complaints] Failed for {complaint.id}: {e}")
+                    session.rollback()
+                    continue
+
+            session.commit()
+            logger.info(f"[stale_complaints] Done — {escalated} escalated")
+            return {"status": "ok", "escalated": escalated}
+
+        except Exception as exc:
+            session.rollback()
+            logger.error(f"[stale_complaints] Unhandled error: {exc}", exc_info=True)
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Agent task — fires after classification for laundry/maintenance/multi-person
 # ---------------------------------------------------------------------------
 
 @celery_app.task(
     bind=True,
-    max_retries=3,
-    default_retry_delay=2,
-    retry_backoff=True,
-    name="tasks.complaint_tasks.route_to_laundry_agent",
+    max_retries=2,
+    default_retry_delay=5,
+    name="tasks.complaint_tasks.run_complaint_agent_task",
 )
-def route_to_laundry_agent(self, complaint_id: str):
+def run_complaint_agent_task(
+    self,
+    complaint_id: str,
+    student_id: str,
+    hostel_id: str,
+    category: str,
+    severity: str,
+    affected_count: int,
+    location: str | None,
+    safety_flag: bool,
+    complaint_text: str,
+):
     """
-    Called when Agent 1 classifies a complaint as 'laundry'.
-    Runs LaundryAgent to determine routing action.
-    Logs the routing result — does NOT re-transition complaint status
-    (Agent 1 already moved it to ASSIGNED in classify_and_route_complaint).
+    Runs the Groq tool-calling agent for a complaint that has been classified
+    and routed. Operates on a fresh async DB session — does not share the
+    classification task's session.
+
+    Eligible complaints: laundry, maintenance, or affected_count > 1
+    (and not sent to the approval queue, which wardens handle directly).
     """
+    from database import AsyncSessionLocal
+    from agents.complaint_agent import run_complaint_agent
+
+    logger.info(f"[agent_task] Starting agent for complaint {complaint_id}")
+
     async def _run():
-        from database import AsyncSessionLocal
-        from agents.agent_laundry import LaundryAgent
-        from models.complaint import Complaint
         async with AsyncSessionLocal() as db:
-            complaint = await db.get(Complaint, uuid.UUID(complaint_id))
-            if not complaint:
-                logger.error(f"[laundry_route] Complaint {complaint_id} not found")
-                return
-            agent = LaundryAgent()
-            text = complaint.sanitized_text or complaint.text
-            result = await agent.route_complaint(text, str(complaint.student_id))
-            if result:
-                logger.info(
-                    f"[laundry_route] Complaint {complaint_id} → action={result.action_taken}, "
-                    f"notes={result.notes}"
-                )
-            else:
-                logger.warning(f"[laundry_route] LaundryAgent returned None for {complaint_id}")
-
-    try:
-        import asyncio
-        asyncio.run(_run())
-    except Exception as exc:
-        logger.error(f"[laundry_route] Task failed for {complaint_id}: {exc}", exc_info=True)
-        raise self.retry(exc=exc)
-
-
-@celery_app.task(
-    bind=True,
-    max_retries=3,
-    default_retry_delay=2,
-    retry_backoff=True,
-    name="tasks.complaint_tasks.route_to_mess_agent",
-)
-def route_to_mess_agent(self, complaint_id: str):
-    """
-    Called when Agent 1 classifies a complaint as 'mess'.
-    Logs the routing. Complaint is already ASSIGNED to mess_secretary/mess_manager
-    by classify_and_route_complaint — this task provides additional context logging.
-    """
-    async def _run():
-        from database import AsyncSessionLocal
-        from models.complaint import Complaint
-        async with AsyncSessionLocal() as db:
-            complaint = await db.get(Complaint, uuid.UUID(complaint_id))
-            if not complaint:
-                logger.error(f"[mess_route] Complaint {complaint_id} not found")
-                return
-            logger.info(
-                f"[mess_route] Mess complaint {complaint_id} routed to "
-                f"assignee={complaint.assigned_to}"
+            return await run_complaint_agent(
+                complaint_id=complaint_id,
+                student_id=student_id,
+                hostel_id=hostel_id,
+                category=category,
+                severity=severity,
+                affected_count=affected_count,
+                location=location,
+                safety_flag=safety_flag,
+                complaint_text=complaint_text,
+                db=db,
             )
 
     try:
-        import asyncio
-        asyncio.run(_run())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(_run())
+        finally:
+            loop.close()
+        logger.info(f"[agent_task] Agent completed for {complaint_id}: {result.get('status')}")
+        return result
     except Exception as exc:
-        logger.error(f"[mess_route] Task failed for {complaint_id}: {exc}", exc_info=True)
-        raise self.retry(exc=exc)
-
+        logger.error(f"[agent_task] Unhandled error for {complaint_id}: {exc}", exc_info=True)
+        raise

@@ -9,7 +9,12 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:
+    Vector = None
 from sqlalchemy.types import VARCHAR
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -51,6 +56,13 @@ class Complaint(Base):
     assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # LLM extraction fields (Phase 2)
+    urgency: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    affected_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    location: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    safety_flag: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    language_detected: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Kept for backwards compatibility — no longer used for routing decisions
     confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ai_suggested_category: Mapped[Optional[ComplaintCategory]] = mapped_column(
         Enum(ComplaintCategory, name="complaintcategory"), nullable=True
@@ -65,6 +77,10 @@ class Complaint(Base):
         nullable=False,
     )
     flagged_input: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Feedback loop: warden's corrected category, stored for AI accuracy analytics
+    warden_corrected_category: Mapped[Optional[ComplaintCategory]] = mapped_column(
+        Enum(ComplaintCategory, name="complaintcategory"), nullable=True
+    )
     override_reason: Mapped[Optional[OverrideReason]] = mapped_column(
         Enum(OverrideReason, name="overridereason"), nullable=True
     )
@@ -73,6 +89,8 @@ class Complaint(Base):
     )
     reopen_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Phase 5: Semantic deduplication (pgvector)
+    embedding = mapped_column(Vector(384), nullable=True) if Vector else None
     # Sprint 7: Multi-tenant
     hostel_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("hostels.id", ondelete="SET NULL"), nullable=True, index=True

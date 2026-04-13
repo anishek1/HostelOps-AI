@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Warden-level roles for machine management (Golden Rule 19)
-WARDEN_ROLES = [UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden]
+WARDEN_ROLES = [UserRole.warden]
 
 
 # ---------------------------------------------------------------------------

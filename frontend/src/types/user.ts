@@ -4,14 +4,12 @@
  * When backend schemas change, update this file immediately.
  */
 
+// Must match backend schemas/enums.py UserRole exactly
 export type UserRole =
     | 'student'
     | 'laundry_man'
-    | 'mess_secretary'
-    | 'mess_manager'
-    | 'assistant_warden'
-    | 'warden'
-    | 'chief_warden';
+    | 'mess_staff'
+    | 'warden';
 
 export type HostelMode = 'college' | 'autonomous';
 

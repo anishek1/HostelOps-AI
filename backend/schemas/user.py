@@ -37,6 +37,8 @@ class UserRead(UserBase):
     rejection_reason: str | None = None
     has_seen_onboarding: bool = False
     feedback_streak: int = 0  # Sprint 7b
+    roll_number: str | None = None
+    erp_document_url: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -7,23 +7,23 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppShell from '../../components/AppShell';
 import { getMessMenu, submitFeedback, getMyFeedback } from '../../api/messApi';
-import type { MealPeriod, MessRatings } from '../../types/mess';
+import type { MealPeriod, MessRatings, MessFeedbackCreate } from '../../types/mess';
 import { useAuth } from '../../hooks/useAuth';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
+    textMuted: '#6B6B80',
+    card: '#13121A',
     danger: '#E83B2A',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.10)',
     amber: '#D48C00',
     amberLight: 'rgba(212,140,0,0.12)',
-    border: 'rgba(0,0,0,0.06)',
+    border: 'rgba(255,255,255,0.06)',
 };
 
 type Tab = 'menu' | 'rate' | 'history';
@@ -118,7 +118,7 @@ function MenuTab({ selectedMeal, onMealChange }: { selectedMeal: MealPeriod; onM
             {isLoading ? (
                 <div style={{ background: C.card, borderRadius: 16, height: 160 }} />
             ) : menu ? (
-                <div style={{ background: C.card, borderRadius: 16, padding: 20, boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
+                <div style={{ background: C.card, borderRadius: 16, padding: 20, boxShadow: '0 1px 6px rgba(255,255,255,0.03)' }}>
                     <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.10em', textTransform: 'uppercase', margin: '0 0 14px' }}>
                         Today's {MEALS.find((m) => m.key === selectedMeal)?.label} Menu
                     </p>
@@ -132,7 +132,7 @@ function MenuTab({ selectedMeal, onMealChange }: { selectedMeal: MealPeriod; onM
                     </div>
                 </div>
             ) : (
-                <div style={{ background: C.card, borderRadius: 16, padding: '32px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
+                <div style={{ background: C.card, borderRadius: 16, padding: '32px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(255,255,255,0.03)' }}>
                     <span className="material-symbols-outlined" style={{ fontSize: 36, color: C.textMuted, display: 'block', marginBottom: 10 }}>restaurant_menu</span>
                     <p style={{ fontSize: 13, color: C.textSecondary, margin: 0 }}>Menu not posted yet for this meal.</p>
                 </div>
@@ -167,17 +167,22 @@ function RateTab({ selectedMeal, onMealChange }: { selectedMeal: MealPeriod; onM
     const canSubmit = Object.values(ratings).every((v) => v > 0);
 
     function handleSubmit() {
-        mutation.mutate({
+        const payload: MessFeedbackCreate = {
             meal: selectedMeal,
-            date: todayISO(),
-            ratings,
-            comment: comment.trim() || undefined,
-        });
+            feedback_date: todayISO(),
+            food_quality: ratings.food_quality,
+            food_quantity: ratings.food_quantity,
+            hygiene: ratings.hygiene,
+            menu_variety: ratings.menu_variety,
+            timing: ratings.timing,
+        };
+        if (comment.trim()) payload.comment = comment.trim();
+        mutation.mutate(payload);
     }
 
     if (success) {
         return (
-            <div style={{ background: C.card, borderRadius: 20, padding: '32px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
+            <div style={{ background: C.card, borderRadius: 20, padding: '32px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(255,255,255,0.03)' }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 44, color: C.success, display: 'block', marginBottom: 12, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
                 <h3 style={{ fontSize: 17, fontWeight: 700, color: C.textPrimary, margin: '0 0 6px' }}>Feedback submitted!</h3>
                 <p style={{ fontSize: 13, color: C.textSecondary, margin: 0 }}>Thank you for rating today's meal.</p>
@@ -216,7 +221,7 @@ function RateTab({ selectedMeal, onMealChange }: { selectedMeal: MealPeriod; onM
             </div>
 
             {/* Rating card */}
-            <div style={{ background: C.card, borderRadius: 20, padding: '18px 20px', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', marginBottom: 14 }}>
+            <div style={{ background: C.card, borderRadius: 20, padding: '18px 20px', boxShadow: '0 1px 6px rgba(255,255,255,0.03)', marginBottom: 14 }}>
                 <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.10em', textTransform: 'uppercase', margin: '0 0 16px' }}>
                     Rate Today's {MEALS.find((m) => m.key === selectedMeal)?.label}
                 </p>
@@ -234,7 +239,7 @@ function RateTab({ selectedMeal, onMealChange }: { selectedMeal: MealPeriod; onM
             </div>
 
             {/* Comment */}
-            <div style={{ background: C.card, borderRadius: 16, padding: '14px 16px', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', marginBottom: 16 }}>
+            <div style={{ background: C.card, borderRadius: 16, padding: '14px 16px', boxShadow: '0 1px 6px rgba(255,255,255,0.03)', marginBottom: 16 }}>
                 <textarea
                     value={comment}
                     onChange={(e) => setComment(e.target.value.slice(0, 300))}
@@ -300,7 +305,7 @@ function HistoryTab() {
 
     if (history.length === 0) {
         return (
-            <div style={{ background: C.card, borderRadius: 16, padding: '40px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
+            <div style={{ background: C.card, borderRadius: 16, padding: '40px 20px', textAlign: 'center', boxShadow: '0 1px 6px rgba(255,255,255,0.03)' }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 36, color: C.textMuted, display: 'block', marginBottom: 10 }}>receipt_long</span>
                 <p style={{ fontSize: 13, color: C.textSecondary, margin: 0 }}>No feedback submitted yet.</p>
             </div>
@@ -313,7 +318,7 @@ function HistoryTab() {
                 const avg = ((f.food_quality + f.food_quantity + f.hygiene + f.menu_variety + f.timing) / 5).toFixed(1);
                 const meal = MEALS.find((m) => m.key === f.meal);
                 return (
-                    <div key={f.id} style={{ background: C.card, borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                    <div key={f.id} style={{ background: C.card, borderRadius: 14, padding: '14px 16px', boxShadow: '0 1px 4px rgba(255,255,255,0.03)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.textMuted }}>{meal?.icon ?? 'restaurant'}</span>
@@ -325,7 +330,7 @@ function HistoryTab() {
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 10, color: C.textMuted, background: '#F0EDE8', padding: '2px 8px', borderRadius: 999 }}>
+                            <span style={{ fontSize: 10, color: C.textMuted, background: '#1C1B24', padding: '2px 8px', borderRadius: 999 }}>
                                 {new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                             </span>
                             {f.comment && (
@@ -355,9 +360,9 @@ export default function MessPage() {
     return (
         <AppShell>
             <div style={{ background: C.bg, minHeight: '100dvh' }}>
-                {/* Header */}
-                <header style={{ padding: '52px 20px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                {/* Sticky Header */}
+                <header style={{ position: 'sticky', top: 0, zIndex: 20, background: C.bg }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '52px 20px 16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div
                                 style={{
@@ -392,45 +397,34 @@ export default function MessPage() {
                             </div>
                         )}
                     </div>
+
+                    {/* Sticky tab bar */}
+                    <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, paddingInline: 20 }}>
+                        {TABS.map((t) => (
+                            <button
+                                key={t.key}
+                                onClick={() => setTab(t.key)}
+                                style={{
+                                    flex: 1,
+                                    height: 40,
+                                    border: 'none',
+                                    borderBottom: tab === t.key ? `2px solid ${C.primary}` : '2px solid transparent',
+                                    background: 'transparent',
+                                    color: tab === t.key ? C.primary : C.textSecondary,
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                }}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
                 </header>
 
-                {/* Tab bar */}
-                <div
-                    style={{
-                        display: 'flex',
-                        background: C.card,
-                        margin: '0 20px 20px',
-                        borderRadius: 12,
-                        padding: 4,
-                        gap: 2,
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                    }}
-                >
-                    {TABS.map((t) => (
-                        <button
-                            key={t.key}
-                            onClick={() => setTab(t.key)}
-                            style={{
-                                flex: 1,
-                                height: 36,
-                                border: 'none',
-                                borderRadius: 9,
-                                background: tab === t.key ? C.primary : 'transparent',
-                                color: tab === t.key ? '#fff' : C.textSecondary,
-                                fontSize: 13,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                                transition: 'all 0.15s',
-                            }}
-                        >
-                            {t.label}
-                        </button>
-                    ))}
-                </div>
-
                 {/* Tab content */}
-                <div style={{ padding: '0 20px 100px' }}>
+                <div style={{ padding: '16px 20px 100px' }}>
                     {tab === 'menu'    && <MenuTab    selectedMeal={selectedMeal} onMealChange={setSelectedMeal} />}
                     {tab === 'rate'    && <RateTab    selectedMeal={selectedMeal} onMealChange={setSelectedMeal} />}
                     {tab === 'history' && <HistoryTab />}

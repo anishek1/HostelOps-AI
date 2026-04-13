@@ -1,6 +1,6 @@
 # HostelOps AI — Project State Document & AI Onboarding Prompt
-# Version: Sprint 7b Complete — Sprint F Starting
-# Last Updated: March 2026
+# Version: Sprint F In Progress — Dark Mode Redesign + Backend Enhancements Complete
+# Last Updated: April 3, 2026
 # Purpose: Single source of truth for the current project state.
 #          Paste into ANY AI assistant to instantly onboard it.
 #          Update at the end of every sprint.
@@ -319,6 +319,37 @@ This is the most important section. Every deviation from the original plan is do
 
 ---
 
+### SPRINT F — Phase 1–6: Frontend + Backend Enhancements (IN PROGRESS 🔄, April 2026)
+**Goal:** Build React PWA, redesign to dark mode, add real Groq function-calling agent, pgvector deduplication, proactive monitoring.
+
+**Backend additions (alongside frontend sprint):**
+- `agents/complaint_agent.py` — real Groq function-calling ReAct agent (7 tools, max 5 iterations, `tool_choice="auto"`). Fires after classification for laundry/maintenance or complaints with affected_count > 1.
+- `services/embedding_service.py` — HuggingFace Inference API (all-MiniLM-L6-v2, 384-dim). Generates embeddings after complaint classification. Gracefully skips if HF_API_KEY not set.
+- `tools/complaint_tools.py` — 7 new tools: get_student_complaint_history, find_similar_open_complaints (pgvector cosine similarity, falls back to category+location), get_staff_availability, check_machine_status, escalate_complaint_agent, reschedule_affected_slots, notify_student_tool
+- `tasks/complaint_tasks.py` — run_complaint_agent_task (Celery task with asyncio.new_event_loop); check_stale_complaints (→ESCALATED after 48h, every 2h)
+- `tasks/laundry_tasks.py` — send_slot_reminders (30m interval, 25–35min before slot); check_laundry_complaint_clusters (2h interval, warden alert if ≥3 in 24h)
+- New Celery beat entries: check-stale-complaints (7200s), send-slot-reminders (1800s), check-laundry-complaint-clusters (7200s)
+- `models/complaint.py` — warden_corrected_category (ComplaintCategory, nullable); embedding (Vector(384), nullable, pgvector)
+- `config.py` — HF_API_KEY, EMBEDDING_MODEL, EMBEDDING_DIM, SIMILARITY_THRESHOLD
+- `requirements.txt` — pgvector==0.3.6, httpx==0.27.0 (0.28.1 conflicts with supabase requiring <0.28)
+
+**Frontend:**
+- All screens built: 6 auth, 8 student, 2 staff, 6 warden, shared components
+- Full dark mode redesign: electric purple (#7C5CFC) + mint (#00D4AA) palette; `lib/theme.ts` shared constants
+- `hostelSettingsApi.ts` completely rewritten with correct backend field names
+- Multiple runtime crash fixes across warden screens
+
+**Key deviations:**
+- `httpx==0.27.0` required (supabase SDK requires <0.28, 0.28.1 causes conflict)
+- pgvector column added with `try/except` import guard in models/complaint.py (environments without pgvector installed won't crash on import)
+- Celery task uses `celery_app.send_task("tasks.complaint_tasks.run_complaint_agent_task", kwargs=...)` not direct `.delay()` (avoids circular import forward reference)
+- `ALTER TYPE ADD VALUE` for mess_staff enum required `with op.get_context().autocommit_block():` in migration (cannot use new enum value in same transaction as DML)
+- FastAPI routes must use `""` not `"/"` (trailing slash causes redirect that strips CORS headers)
+- `updated_at: Optional[datetime] = None` in HostelConfigRead — `onupdate` columns are NULL on first insert
+- hostel_code injected into `/api/config` response via Hostel table join (not stored in hostel_config)
+
+---
+
 ### PRODUCTION AUDIT — Full Codebase Audit (COMPLETE ✅, March 21, 2026)
 **Goal:** Harden all hostel_id isolation gaps before Sprint F begins. Two rounds of fixes.
 
@@ -397,6 +428,12 @@ LAUNDRY_CANCELLATION_DEADLINE_MINUTES=15
 
 # Approval Queue (also in hostel_config table)
 APPROVAL_QUEUE_TIMEOUT_MINUTES=30
+
+# pgvector / Semantic Deduplication (Sprint F — optional; skip if HF_API_KEY not set)
+HF_API_KEY=<from huggingface.co/settings/tokens>
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_DIM=384
+SIMILARITY_THRESHOLD=0.82
 ```
 
 ---
@@ -445,6 +482,15 @@ APPROVAL_QUEUE_TIMEOUT_MINUTES=30
 | hostel_config cache keyed by hostel_id | Cache isolation per hostel | Single-key cache would return wrong hostel's config | Audit |
 | Custom Claude Code agents created | Roles: code-reviewer, security-auditor, frontend-dev, test-engineer, debugger, sprint-pm | AI-first dev workflow | Audit |
 | Google Stitch MCP integrated | Sprint F frontend design workflow | Design → code pipeline | Sprint F prep |
+| Do NOT use Stitch MCP to generate screens | Build React components directly | Stitch generates static HTML, not React; wastes context | Sprint F |
+| Dark mode palette locked | #0A0A0F bg, #7C5CFC primary, #00D4AA accent | Portfolio quality; old indigo/saffron deprecated | Sprint F Ph6 |
+| httpx pinned to 0.27.0 | Not 0.28.x | supabase SDK requires httpx<0.28 | Sprint F |
+| pgvector try/except import guard | models/complaint.py | Environments without pgvector installed won't crash | Sprint F |
+| Celery send_task not .delay() for agent task | Avoids circular import forward reference | Run via celery_app.send_task() | Sprint F |
+| ALTER TYPE ADD VALUE needs autocommit_block | Pydantic won't allow new enum in same transaction | Use op.get_context().autocommit_block() | Sprint F |
+| FastAPI routes use "" not "/" | Trailing slash redirect strips CORS headers | Always use empty string in @router decorators | Sprint F |
+| Optional[datetime] on onupdate columns | onupdate columns NULL on first INSERT | Always Optional in Pydantic schema | Sprint F |
+| hostel_code injected into /api/config | Via Hostel table join in route | hostel_code not stored in hostel_config table | Sprint F |
 
 ---
 
@@ -498,7 +544,7 @@ Server starts without errors. All 9 hostel_id isolation gaps patched (5 in user_
 ## SECTION 9 — CURRENT STATE & NEXT STEPS
 
 ```
-Current sprint: Sprint F — React PWA Frontend
+Current sprint: Sprint F — React PWA Frontend (IN PROGRESS, dark mode redesign complete, bugs being fixed)
 Sprint 1:  ✅ Foundation + Auth
 Sprint 2:  ✅ Agent 1 + Celery Pipeline
 Sprint 3:  ✅ Agent 1 Complete (approval queue, resolution flow)
@@ -508,8 +554,83 @@ Sprint 6:  ✅ Backend Completions + Flow Fixes — backend feature-complete
 Sprint 7:  ✅ Multi-tenant Architecture (hostel_id + hostel codes)
 Sprint 7b: ✅ API Polish + New Features
 Audit:     ✅ Production Audit Complete (2 rounds, 31 fixes, 8 manual checks passed)
-Sprint F:  🔄 React PWA Frontend — STARTING NOW
+Sprint F:  🔄 React PWA Frontend — All screens built, dark mode redesign done, warden screens partially live-tested
 Sprint D:  ⏳ Docker + Railway deployment (after Sprint F)
+```
+
+### Sprint F — What's done (as of April 3, 2026)
+
+**Phase 1–5: All screens built, backend agent enhancements added (March 23 – April 3)**
+- All 24+ screens built and wired to API
+- Real Groq function-calling ReAct agent (complaint_agent.py, 7 tools, max 5 iterations)
+- pgvector semantic deduplication for complaints (embedding_service.py + HuggingFace Inference API)
+- Proactive monitoring Celery tasks: check_stale_complaints, check_laundry_complaint_clusters, send_slot_reminders
+- Alembic migrations: warden_corrected_category, pgvector extension + embedding column
+
+**Phase 6: Dark Mode Redesign (April 3)**
+- Complete dark mode color palette: bg #0A0A0F, card #13121A, primary #7C5CFC (electric purple), accent #00D4AA (mint)
+- All 24 pages/components updated via parallel agents + bulk sed
+- `frontend/src/lib/theme.ts` created with shared color constants
+- `frontend/src/index.css` rewritten for dark mode
+- AppShell + all BottomNav components updated
+
+**API + Backend bug fixes (March 23 + April 3):**
+- wardenApi.ts: removed doubled /api prefix from all 15 calls; fixed 6 wrong paths; removed non-existent assignComplaint
+- hostelSettingsApi.ts: completely rewritten with correct backend field names
+- hostel_config.created_at: server_default → Python-side default (fixed NotNullViolationError)
+- HostelConfigRead.updated_at: datetime → Optional[datetime] = None (fixed 500 on new rows)
+- hostel_config.py routes: "/" → "" (fixed CORS header loss on trailing-slash redirect)
+- hostel_code: added to HostelConfigRead response via Hostel table join; displayed in HostelSettings UI
+- WardenDashboard: .toFixed() on undefined → added ?? 0 fallback on all 4 analytics fields
+- initials() null guard: fixed in 7 files (StudentRegistrations, WardenDashboard, HostelSettings, etc.)
+- HostelSettings.tsx: completely rewritten with correct field names + hostel_code read-only display
+
+### Screens complete (Sprint F)
+
+Auth: Landing, Register, RegistrationPending, RegistrationRejected, Login, HostelSetup
+Student: StudentHome, ComplaintForm, ComplaintsList, LaundryBooking, MessPage,
+         NotificationInbox, StudentProfile, Onboarding
+Staff: LaundryManView, MessStaffView
+Components: AppShell, StudentBottomNav (5 tabs: Home/Complaints/Laundry/Mess/Profile)
+Warden: WardenDashboard, ApprovalQueue, ComplaintManagement, StudentRegistrations,
+        HostelSettings (fully wired), CreateStaffAccount
+
+### Known remaining work
+
+Live testing of these flows is still needed:
+- Student registration → warden approval → student login
+- Warden: approval queue, complaints management, staff CRUD
+- Student: complaint filing and tracking
+- Laundry booking end-to-end
+- Mess feedback end-to-end
+- Notifications (30-second polling)
+
+Backend not yet tested:
+- complaint_agent.py ReAct loop with Groq function calling
+- embedding_service.py (requires HF_API_KEY in .env)
+- Celery beat: check_stale_complaints (2h), send_slot_reminders (30m), check_laundry_complaint_clusters (2h)
+
+### Frontend design decisions (Sprint F, LOCKED — dark mode)
+
+- **Dark mode palette:** bg #0A0A0F, card #13121A, elevated #1C1B24, primary #7C5CFC, accent #00D4AA
+- Inline styles throughout (no Tailwind class usage in student/warden pages)
+- Color constants defined as `const C = {...}` at the top of each page
+- StudentBottomNav: #13121A bg, active #7C5CFC, inactive #6B6B80
+- MessPage: sticky header with underline tab indicator (not pill buttons)
+- NotificationInbox + StudentProfile: no back button (bottom nav tabs)
+- StudentProfile logout: `window.location.replace`
+- Quick actions section title: "What do you need?"
+- Icon containers: rounded squares (borderRadius 14, 40–44px) not circles
+- HostelSettings: hostel_code shown as read-only pill badge in General section header
+
+### New .env variables needed (from backend enhancements)
+
+```env
+# pgvector embeddings (optional — skipped gracefully if not set)
+HF_API_KEY=<from huggingface.co/settings/tokens>
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_DIM=384
+SIMILARITY_THRESHOLD=0.82
 ```
 
 ### When starting a new session with any AI:
@@ -519,7 +640,7 @@ Read PROJECT_STATE.md completely before doing anything.
 Then read CONVENTIONS.md.
 Then read the relevant sections of PRD.md for the current sprint.
 
-Current sprint: Sprint F — React PWA Frontend
+Current sprint: Sprint F — React PWA Frontend (dark mode, warden screens, live testing)
 
 Your task: [DESCRIBE TASK]
 ```
@@ -568,6 +689,11 @@ Your task: [DESCRIBE TASK]
 30. **Complaint text minimum 10 characters.** Enforce in schema and backend (Sprint 7b).
 31. **After Sprint 7: every query must filter by hostel_id.** Data isolation is mandatory. A user from hostel A must never see hostel B's data.
 32. **Login must include hostel_code.** Room numbers are not globally unique — hostel_id scoping on login is mandatory. Never allow login by room_number alone.
+33. **FastAPI route decorators use `""` not `"/"`** when mounted under a prefix. Trailing slash causes a 307 redirect that strips CORS headers.
+34. **`onupdate` timestamp columns must be `Optional[...]` in Pydantic schemas.** They are NULL on first INSERT — declaring as non-optional causes a 500 validation failure.
+35. **`httpx` must stay at `0.27.0`.** supabase SDK requires `httpx<0.28`. Do not upgrade.
+36. **`ALTER TYPE ADD VALUE` must run in `autocommit_block()`.** New enum values cannot be used in the same transaction as DML. Use `with op.get_context().autocommit_block():` in Alembic migrations.
+37. **Debug 500 errors from backend before editing frontend.** CORS errors are usually symptoms of a backend 500 (FastAPI can't add CORS headers if it crashes). Reproduce with curl or a direct Python async test first.
 
 ---
 

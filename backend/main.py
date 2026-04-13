@@ -62,7 +62,6 @@ from routes.notifications import router as notifications_router  # noqa: E402
 from routes.laundry import router as laundry_router  # noqa: E402
 from routes.mess import router as mess_router        # noqa: E402
 from routes.hostel_config import router as hostel_config_router  # noqa: E402  Sprint 5
-from routes.push import router as push_router        # noqa: E402  Sprint 5
 from routes.analytics import router as analytics_router  # noqa: E402  Sprint 5
 from routes.hostels import router as hostels_router      # noqa: E402  Sprint 7
 from routes.notices import router as notices_router      # noqa: E402  Sprint 7b
@@ -75,7 +74,6 @@ app.include_router(notifications_router, prefix="/api/notifications", tags=["Not
 app.include_router(laundry_router, prefix="/api/laundry", tags=["Laundry"])
 app.include_router(mess_router, prefix="/api/mess", tags=["Mess"])
 app.include_router(hostel_config_router, prefix="/api/config", tags=["Hostel Config"])  # Sprint 5
-app.include_router(push_router, prefix="/api/push", tags=["Push Notifications"])  # Sprint 5
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics"])  # Sprint 5
 app.include_router(hostels_router, prefix="/api/hostels", tags=["Hostels"])        # Sprint 7
 app.include_router(notices_router, prefix="/api/notices", tags=["Notices"])        # Sprint 7b

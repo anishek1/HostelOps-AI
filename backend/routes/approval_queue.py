@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Roles allowed to access the approval queue
-WARDEN_ROLES = (UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)
+WARDEN_ROLES = (UserRole.warden,)
 
 
 # ---------------------------------------------------------------------------

@@ -101,7 +101,7 @@ async def create_hostel_with_warden(payload, db: AsyncSession):
     warden = User(
         name=payload.warden_name,
         room_number=payload.warden_room_number,
-        role=UserRole.assistant_warden,
+        role=UserRole.warden,
         hostel_mode=payload.hostel_mode,
         hashed_password=hash_password(payload.warden_password),
         is_verified=True,
@@ -113,6 +113,15 @@ async def create_hostel_with_warden(payload, db: AsyncSession):
 
     # 5. Seed default hostel config for this hostel
     await seed_default_config(db, hostel_id=hostel.id)
+
+    # 6. Claim any orphaned machines (seeded by create_admin.py without hostel_id)
+    from models.machine import Machine
+    from sqlalchemy import update as _update
+    await db.execute(
+        _update(Machine)
+        .where(Machine.hostel_id.is_(None))
+        .values(hostel_id=hostel.id)
+    )
 
     await db.commit()
     await db.refresh(hostel)

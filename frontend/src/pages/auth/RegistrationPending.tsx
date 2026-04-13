@@ -5,14 +5,7 @@
  */
 
 import { Link } from 'react-router-dom';
-
-const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    card: '#FFFFFF',
-};
+import { C } from '../../lib/theme';
 
 const steps = [
     'Warden reviews your details',

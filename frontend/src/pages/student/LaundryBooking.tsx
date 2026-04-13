@@ -9,19 +9,19 @@ import AppShell from '../../components/AppShell';
 import { getMachines, getDaySlots, getMyBookings, bookSlot, cancelBooking } from '../../api/laundryApi';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
     primaryContainer: 'rgba(70,71,211,0.12)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
+    textMuted: '#6B6B80',
+    card: '#13121A',
     danger: '#E83B2A',
     dangerLight: 'rgba(232,59,42,0.10)',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.12)',
-    border: 'rgba(0,0,0,0.06)',
+    border: 'rgba(255,255,255,0.06)',
 };
 
 function toISO(date: Date) {
@@ -41,17 +41,16 @@ function buildWeek(): Date[] {
 const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const TODAY = toISO(new Date());
 
-// Pre-generate time slots 7:00 – 21:00 every hour
-const TIME_SLOTS = Array.from({ length: 15 }, (_, i) => {
-    const h = 7 + i;
-    return `${String(h).padStart(2, '0')}:00`;
-});
-
+// Format slot_time like "08:00-09:00" → "8:00 AM – 9:00 AM"
 function formatTime(t: string) {
-    const [h, m] = t.split(':').map(Number);
-    const suffix = h < 12 ? 'AM' : 'PM';
-    const displayH = h % 12 || 12;
-    return `${displayH}:${String(m).padStart(2, '0')} ${suffix}`;
+    const parts = t.split('-');
+    const fmt = (seg: string) => {
+        const [h, m] = seg.split(':').map(Number);
+        const suffix = h < 12 ? 'AM' : 'PM';
+        const displayH = h % 12 || 12;
+        return `${displayH}:${String(m).padStart(2, '0')} ${suffix}`;
+    };
+    return parts.length === 2 ? `${fmt(parts[0])} – ${fmt(parts[1])}` : t;
 }
 
 export default function LaundryBooking() {
@@ -81,13 +80,31 @@ export default function LaundryBooking() {
 
     const selectedMachine = machines[selectedMachineIdx];
 
-    function getSlotState(time: string, machineId: string) {
-        const slot = daySlots.find((s) => s.slot_time === time && s.machine_id === machineId);
-        if (!slot) return 'available';
-        if (slot.is_yours) return 'yours';
-        if (slot.machine_status === 'repair') return 'repair';
-        if (!slot.is_available) return 'booked';
-        return 'available';
+    // Derive all slot times for the selected machine on the selected date
+    // = union of available slots (from daySlots) + own booked slots (from myBookings)
+    const slotTimes = React.useMemo(() => {
+        if (!selectedMachine) return [];
+        const times = new Set<string>();
+        daySlots
+            .filter((s) => s.machine_id === selectedMachine.id)
+            .forEach((s) => times.add(s.slot_time));
+        myBookings
+            .filter((b) => b.slot_date === selectedDate && b.machine_id === selectedMachine.id && b.booking_status === 'booked')
+            .forEach((b) => times.add(b.slot_time));
+        return Array.from(times).sort();
+    }, [daySlots, myBookings, selectedMachine, selectedDate]);
+
+    function getSlotState(slotTime: string, machineId: string) {
+        // Check if student already booked this slot
+        const myBooking = myBookings.find(
+            (b) => b.slot_time === slotTime && b.machine_id === machineId && b.booking_status === 'booked'
+        );
+        if (myBooking) return 'yours';
+        // Available slot exists in the day slots list
+        const available = daySlots.find((s) => s.slot_time === slotTime && s.machine_id === machineId);
+        if (available) return 'available';
+        // Not in available list = already booked by someone else
+        return 'booked';
     }
 
     async function handleCancelBooking(id: string) {
@@ -101,14 +118,14 @@ export default function LaundryBooking() {
         }
     }
 
-    const upcomingBookings = myBookings.filter((b) => b.status === 'booked');
+    const upcomingBookings = myBookings.filter((b) => b.booking_status === 'booked');
 
     return (
         <AppShell>
             <div style={{ background: C.bg, minHeight: '100dvh' }}>
-                {/* Header */}
-                <header style={{ padding: '52px 20px 16px' }}>
-                    <h1 style={{ fontSize: 22, fontWeight: 800, color: C.textPrimary, margin: '0 0 4px' }}>
+                {/* Sticky Header */}
+                <header style={{ position: 'sticky', top: 0, zIndex: 20, background: C.bg, padding: '52px 20px 12px' }}>
+                    <h1 style={{ fontSize: 22, fontWeight: 800, color: C.textPrimary, margin: '0 0 2px' }}>
                         Laundry Booking
                     </h1>
                     <p style={{ fontSize: 13, color: C.textSecondary, margin: 0 }}>
@@ -147,7 +164,7 @@ export default function LaundryBooking() {
                                     justifyContent: 'center',
                                     gap: 3,
                                     cursor: 'pointer',
-                                    boxShadow: isSelected ? '0 4px 14px rgba(70,71,211,0.25)' : '0 1px 4px rgba(0,0,0,0.05)',
+                                    boxShadow: isSelected ? '0 4px 14px rgba(70,71,211,0.25)' : '0 1px 4px rgba(255,255,255,0.06)',
                                 }}
                             >
                                 <span style={{ fontSize: 10, fontWeight: 600, color: isSelected ? 'rgba(255,255,255,0.75)' : C.textMuted }}>
@@ -218,6 +235,11 @@ export default function LaundryBooking() {
                             <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.10em', textTransform: 'uppercase', margin: '0 0 12px' }}>
                                 Available Slots
                             </p>
+                            {slotTimes.length === 0 && (
+                                <p style={{ fontSize: 13, color: C.textMuted, marginBottom: 24 }}>
+                                    No slots available for this date.
+                                </p>
+                            )}
                             <div
                                 style={{
                                     display: 'grid',
@@ -226,11 +248,11 @@ export default function LaundryBooking() {
                                     marginBottom: 24,
                                 }}
                             >
-                                {TIME_SLOTS.map((time) => {
+                                {slotTimes.map((time) => {
                                     const state = getSlotState(time, selectedMachine.id);
                                     const colors = {
                                         available: { bg: C.card, border: C.border, label: C.textPrimary, sub: C.success, subLabel: 'Available' },
-                                        booked:    { bg: '#F6F6F6', border: 'transparent', label: '#BDBDBD', sub: '#BDBDBD', subLabel: 'Booked' },
+                                        booked:    { bg: C.card, border: C.border, label: C.textMuted, sub: C.textMuted, subLabel: 'Booked' },
                                         yours:     { bg: C.primaryContainer, border: C.primary, label: C.primary, sub: C.primary, subLabel: 'Your Slot' },
                                         repair:    { bg: C.dangerLight, border: C.danger, label: C.danger, sub: C.danger, subLabel: 'Repair' },
                                     }[state];
@@ -284,7 +306,7 @@ export default function LaundryBooking() {
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: 14,
-                                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                            boxShadow: '0 1px 6px rgba(255,255,255,0.03)',
                                         }}
                                     >
                                         <div
@@ -305,10 +327,10 @@ export default function LaundryBooking() {
                                         </div>
                                         <div style={{ flex: 1 }}>
                                             <p style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary, margin: '0 0 2px' }}>
-                                                {b.date} · {b.start_time}
+                                                {b.slot_date} · {formatTime(b.slot_time)}
                                             </p>
                                             <p style={{ fontSize: 11, color: C.textMuted, margin: 0 }}>
-                                                {b.is_priority ? '⭐ Priority booking' : 'Standard booking'}
+                                                {(b.priority_score ?? 0) > 0.7 ? '⭐ Priority booking' : 'Standard booking'}
                                             </p>
                                         </div>
                                         <button
@@ -372,7 +394,7 @@ export default function LaundryBooking() {
                                 onClick={() => setPendingSlot(null)}
                                 style={{
                                     height: 48,
-                                    background: '#F0EDE8',
+                                    background: '#1C1B24',
                                     border: 'none',
                                     borderRadius: 12,
                                     fontSize: 14,

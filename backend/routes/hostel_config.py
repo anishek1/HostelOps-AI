@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from models.hostel import Hostel
 from models.user import User
 from schemas.enums import UserRole
 from schemas.hostel_config import HostelConfigRead, HostelConfigUpdate
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", response_model=HostelConfigRead)
+@router.get("", response_model=HostelConfigRead)
 async def get_config(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -35,14 +36,19 @@ async def get_config(
     Any authenticated user may read this (students need it too for display).
     """
     config = await hostel_config_service.get_config(db, hostel_id=current_user.hostel_id)
-    return HostelConfigRead.model_validate(config)
+    data = HostelConfigRead.model_validate(config).model_dump()
+    if current_user.hostel_id:
+        hostel = await db.get(Hostel, current_user.hostel_id)
+        if hostel:
+            data["hostel_code"] = hostel.code
+    return data
 
 
-@router.patch("/", response_model=HostelConfigRead)
+@router.patch("", response_model=HostelConfigRead)
 async def update_config(
     updates: HostelConfigUpdate,
     current_user: User = Depends(
-        require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)
+        require_role(UserRole.warden)
     ),
     db: AsyncSession = Depends(get_db),
 ):

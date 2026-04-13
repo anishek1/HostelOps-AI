@@ -4,27 +4,27 @@
   /* Typography */
   --font-sans: "Plus Jakarta Sans", sans-serif;
 
-  /* Primary — Indigo */
-  --color-primary: #4647D3;
-  --color-primary-light: #6366F1;
+  /* Primary — Electric Purple */
+  --color-primary: #7C5CFC;
+  --color-primary-light: #6B4FDB;
 
   /* Semantic */
-  --color-success: #16A085;
-  --color-danger: #E83B2A;
-  --color-warning: #FFB800;
+  --color-success: #00D4AA;
+  --color-danger: #FF4D4F;
+  --color-warning: #FFB020;
   --color-info: #3B82F6;
 
-  /* Surfaces */
-  --color-background: #FFF5EE;
-  --color-card: #FFFFFF;
-  --color-card-alt: #F8F7F4;
-  --color-input-bg: #F5F3EF;
+  /* Surfaces (Dark Mode) */
+  --color-background: #0A0A0F;
+  --color-card: #13121A;
+  --color-card-alt: #1C1B24;
+  --color-input-bg: #1C1B24;
 
   /* Text */
-  --color-text-primary: #1A1A2E;
-  --color-text-secondary: #6B6B80;
-  --color-text-muted: #9B9BAF;
-  --color-text-disabled: #C4C4D4;
+  --color-text-primary: #F0F0F5;
+  --color-text-secondary: #9B9BB0;
+  --color-text-muted: #6B6B80;
+  --color-text-disabled: #4A4A5A;
 }
 
 @layer base {
@@ -35,11 +35,12 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    color-scheme: dark;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: #13121A;
+    background-color: #0A0A0F;
     color: var(--color-text-primary);
     margin: 0;
     min-height: 100dvh;
@@ -56,11 +57,53 @@
     overflow-x: hidden;
   }
 
+  /* Warden screens: remove max-width cap */
+  @media (min-width: 768px) {
+    #root {
+      max-width: 100%;
+    }
+  }
+
   /* Material Symbols icon style */
   .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    display: inline-block;
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     vertical-align: middle;
     line-height: 1;
     user-select: none;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    font-feature-settings: 'liga';
+  }
+
+  /* Scrollbar styling for dark mode */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+  /* Input styling */
+  input, textarea, select {
+    background: #1C1B24;
+    border: 1px solid rgba(255,255,255,0.06);
+    color: #F0F0F5;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: rgba(124,92,252,0.4);
+  }
+  input::placeholder, textarea::placeholder {
+    color: #6B6B80;
   }
 }

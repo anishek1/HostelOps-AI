@@ -9,12 +9,12 @@ import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    card: '#FFFFFF',
+    card: '#13121A',
     success: '#1A9B6C',
     amber: '#D48C00',
     amberLight: 'rgba(212,140,0,0.10)',

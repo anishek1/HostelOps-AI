@@ -4,18 +4,26 @@
  */
 
 export type NotificationType =
-    | 'complaint_update'
-    | 'laundry_reminder'
+    | 'complaint_assigned'
+    | 'approval_needed'
     | 'mess_alert'
-    | 'approval'
-    | 'system';
+    | 'laundry_reminder'
+    | 'machine_down'
+    | 'complaint_resolved'
+    | 'registration_pending'
+    | 'complaint_escalated'
+    | 'complaint_reopened'
+    | 'registration_approved'
+    | 'registration_rejected'
+    | 'password_reset'
+    | 'account_deactivated';
 
 export interface NotificationRead {
     id: string;
-    user_id: string;
+    recipient_id: string;
     title: string;
     body: string;
-    notification_type: NotificationType;
+    type: NotificationType;
     is_read: boolean;
     created_at: string;
 }

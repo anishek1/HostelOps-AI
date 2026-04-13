@@ -38,20 +38,6 @@ async def notify_user(
     db.add(notification)
     await db.commit()
     await db.refresh(notification)
-    
-    # Fire push notification (fire and forget)
-    from services.push_service import send_push_notification
-    try:
-        await send_push_notification(
-            user_id=str(recipient_id),
-            title=title,
-            body=body,
-            data={"type": notification_type.value},
-            db=db
-        )
-    except Exception as e:
-        logger.warning(f"[notify_user] Push notification failed for {recipient_id}: {e}")
-    
     return notification
     
 

@@ -4,9 +4,9 @@ fallback_classifier.py — HostelOps AI
 Rule-based keyword classifier used when LLM is unavailable.
 This is a SAFETY NET only — not a replacement for the LLM.
 Always sets classified_by="fallback" on the complaint record.
-The Warden dashboard must display this distinction clearly.
+Shape mirrors ClassificationResult from agents/complaint_classifier.py.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from schemas.enums import ComplaintCategory, ComplaintSeverity
 
@@ -15,9 +15,12 @@ from schemas.enums import ComplaintCategory, ComplaintSeverity
 class FallbackClassification:
     category: ComplaintCategory
     severity: ComplaintSeverity
-    requires_approval: bool
+    urgency: int           # 1-5
+    affected_count: int    # default 1
+    location: str          # default "unspecified"
+    safety_flag: bool      # default False
+    language_detected: str # default "english"
     classified_by: str = "fallback"
-    note: str = ""
 
 
 KEYWORD_RULES = [
@@ -25,10 +28,11 @@ KEYWORD_RULES = [
         "keywords": [
             "food", "mess", "meal", "breakfast", "lunch", "dinner",
             "cook", "taste", "hygiene", "canteen", "thali", "sabzi", "roti",
+            "khana", "bhojan",
         ],
         "category": ComplaintCategory.mess,
         "severity": ComplaintSeverity.medium,
-        "requires_approval": False,
+        "urgency": 2,
     },
     {
         "keywords": [
@@ -37,18 +41,18 @@ KEYWORD_RULES = [
         ],
         "category": ComplaintCategory.laundry,
         "severity": ComplaintSeverity.medium,
-        "requires_approval": False,
+        "urgency": 2,
     },
     {
         "keywords": [
             "water", "electricity", "fan", "light", "ac", "furniture",
             "door", "window", "plumbing", "flush", "tap", "pipe", "switch",
             "bulb", "ceiling", "wall", "roof", "bed", "mattress", "chair",
-            "table", "cupboard", "lock",
+            "table", "cupboard", "lock", "paani", "bijli",
         ],
         "category": ComplaintCategory.maintenance,
         "severity": ComplaintSeverity.medium,
-        "requires_approval": False,
+        "urgency": 2,
     },
     {
         "keywords": [
@@ -58,7 +62,18 @@ KEYWORD_RULES = [
         ],
         "category": ComplaintCategory.interpersonal,
         "severity": ComplaintSeverity.high,
-        "requires_approval": True,
+        "urgency": 5,
+        "safety_flag": True,
+    },
+    {
+        "keywords": [
+            "fire", "emergency", "collapse", "flood", "gas leak", "unconscious",
+            "hospital", "ambulance", "critical", "life",
+        ],
+        "category": ComplaintCategory.critical,
+        "severity": ComplaintSeverity.high,
+        "urgency": 5,
+        "safety_flag": True,
     },
 ]
 
@@ -76,14 +91,19 @@ def classify_with_fallback(text: str) -> FallbackClassification:
             return FallbackClassification(
                 category=rule["category"],
                 severity=rule["severity"],
-                requires_approval=rule["requires_approval"],
-                note=f"Fallback classifier — matched keywords for {rule['category'].value}",
+                urgency=rule.get("urgency", 2),
+                affected_count=1,
+                location="unspecified",
+                safety_flag=rule.get("safety_flag", False),
+                language_detected="unknown",
             )
 
-    # No keyword match — send to manual review
     return FallbackClassification(
         category=ComplaintCategory.uncategorised,
         severity=ComplaintSeverity.medium,
-        requires_approval=True,
-        note="Fallback classifier — no keyword match found. Manual review required.",
+        urgency=2,
+        affected_count=1,
+        location="unspecified",
+        safety_flag=False,
+        language_detected="unknown",
     )

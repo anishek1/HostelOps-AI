@@ -47,7 +47,7 @@ async def get_users(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    warden: User = Depends(require_role(UserRole.warden)),
 ):
     """
     List users in the warden's hostel with optional filters.
@@ -84,7 +84,7 @@ async def set_onboarding_seen(
 async def verify_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    verifier: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    verifier: User = Depends(require_role(UserRole.warden)),
 ):
     """
     Activate a pending student account.
@@ -98,7 +98,7 @@ async def verify_user(
 async def deactivate_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    deactivator: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    deactivator: User = Depends(require_role(UserRole.warden)),
 ):
     """
     Deactivate a student account (e.g., when student vacates).
@@ -117,7 +117,7 @@ async def reject_pending_user(
     user_id: str,
     payload: RejectRequest,
     db: AsyncSession = Depends(get_db),
-    warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    warden: User = Depends(require_role(UserRole.warden)),
 ):
     """
     Reject a pending student registration.
@@ -135,7 +135,7 @@ async def reset_user_password(
     user_id: str,
     payload: PasswordResetRequest,
     db: AsyncSession = Depends(get_db),
-    warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    warden: User = Depends(require_role(UserRole.warden)),
 ):
     """
     Force reset a user's password.
@@ -167,7 +167,7 @@ async def change_password(
 async def create_staff(
     payload: StaffCreate,
     db: AsyncSession = Depends(get_db),
-    warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    warden: User = Depends(require_role(UserRole.warden)),
 ):
     """
     Create a pre-verified staff account.
@@ -181,7 +181,7 @@ async def list_staff(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    warden: User = Depends(require_role(UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden)),
+    warden: User = Depends(require_role(UserRole.warden)),
 ):
     """
     List all staff accounts.

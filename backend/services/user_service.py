@@ -239,10 +239,8 @@ async def create_staff_account(
     """
     # Role validation
     allowed_roles = {
-        UserRole.laundry_man, 
-        UserRole.mess_secretary, 
-        UserRole.mess_manager, 
-        UserRole.assistant_warden
+        UserRole.laundry_man,
+        UserRole.mess_staff,
     }
     if staff_data.role not in allowed_roles:
         raise HTTPException(

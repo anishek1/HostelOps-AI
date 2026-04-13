@@ -33,8 +33,9 @@ class HostelConfigBase(BaseModel):
 
 class HostelConfigRead(HostelConfigBase):
     id: str
+    hostel_code: Optional[str] = None
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
     @field_validator("id", mode="before")
     @classmethod

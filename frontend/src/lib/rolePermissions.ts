@@ -8,17 +8,13 @@ import type { UserRole } from '../types/user';
 
 // ── Role groups ───────────────────────────────────────────────────────────────
 
-export const WARDEN_ROLES: UserRole[] = [
-    'assistant_warden',
-    'warden',
-    'chief_warden',
-];
+export const WARDEN_ROLES: UserRole[] = ['warden'];
 
 export const STUDENT_ROLES: UserRole[] = ['student'];
 
 export const LAUNDRY_STAFF_ROLES: UserRole[] = ['laundry_man'];
 
-export const MESS_STAFF_ROLES: UserRole[] = ['mess_secretary', 'mess_manager'];
+export const MESS_STAFF_ROLES: UserRole[] = ['mess_staff'];
 
 export const STAFF_ROLES: UserRole[] = [...LAUNDRY_STAFF_ROLES, ...MESS_STAFF_ROLES];
 
@@ -52,13 +48,10 @@ export const STAFF_ROUTES = [
 // ── Default redirect after login ──────────────────────────────────────────────
 
 export const ROLE_DEFAULT_ROUTE: Record<UserRole, string> = {
-    student:           '/student',
-    laundry_man:       '/staff/laundry',
-    mess_secretary:    '/staff/mess',
-    mess_manager:      '/staff/mess',
-    assistant_warden:  '/warden',
-    warden:            '/warden',
-    chief_warden:      '/warden',
+    student:     '/student',
+    laundry_man: '/staff/laundry',
+    mess_staff:  '/staff/mess',
+    warden:      '/warden',
 };
 
 export function getDefaultRoute(role: UserRole): string {

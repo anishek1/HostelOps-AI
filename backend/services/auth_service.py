@@ -123,8 +123,7 @@ async def verify_refresh_token_db(
     """
     Verify a raw refresh token against stored hashes.
     Returns (user, token_obj) if valid and not revoked/expired.
-    Returns (None, None) if invalid.
-    Returns (None, token_obj) if the token is found but revoked (theft detection).
+    Returns (None, None) if invalid, revoked, or expired.
     """
     from models.refresh_token import RefreshToken
 
@@ -138,8 +137,8 @@ async def verify_refresh_token_db(
         return None, None
 
     if token_obj.revoked:
-        logger.warning(f"Revoked token reuse detected — possible theft for user {token_obj.user_id}")
-        return None, token_obj  # Caller handles theft detection
+        logger.info(f"Revoked refresh token used for user {token_obj.user_id}")
+        return None, None
 
     if token_obj.expires_at < datetime.now(timezone.utc):
         logger.info(f"Expired refresh token used for user {token_obj.user_id}")
@@ -321,7 +320,7 @@ async def register_user(payload, db: AsyncSession):
 
     # Notify all assistant wardens in this hostel
     await notify_all_by_role(
-        role=UserRole.assistant_warden,
+        role=UserRole.warden,
         title="New Registration Pending",
         body=f"Student '{payload.name}' (Room {payload.room_number}) has registered and requires verification.",
         notification_type=NotificationType.registration_pending,

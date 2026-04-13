@@ -7,9 +7,9 @@ import type { ComplaintCreate, ComplaintRead } from '../types/complaint';
 import client from './client';
 
 export interface ComplaintTemplate {
-    label: string;
-    emoji: string;
-    text: string;
+    title: string;
+    description: string;
+    category: string;
 }
 
 export interface TimelineEntry {
@@ -39,17 +39,23 @@ export async function getComplaintTemplates(): Promise<ComplaintTemplate[]> {
     return res.data;
 }
 
-export async function fileComplaint(data: ComplaintCreate): Promise<ComplaintRead> {
-    const res = await client.post<ComplaintRead>('/complaints/', data);
+export interface ComplaintCreatedResponse {
+    complaint_id: string;
+    status: string;
+    message: string;
+}
+
+export async function fileComplaint(data: ComplaintCreate): Promise<ComplaintCreatedResponse> {
+    const res = await client.post<ComplaintCreatedResponse>('/complaints/', data);
     return res.data;
 }
 
-export async function confirmResolved(id: string): Promise<ComplaintRead> {
-    const res = await client.post<ComplaintRead>(`/complaints/${id}/confirm`);
+export async function confirmResolved(id: string): Promise<ComplaintCreatedResponse> {
+    const res = await client.post<ComplaintCreatedResponse>(`/complaints/${id}/confirm`);
     return res.data;
 }
 
-export async function reopenComplaint(id: string): Promise<ComplaintRead> {
-    const res = await client.post<ComplaintRead>(`/complaints/${id}/reopen`);
+export async function reopenComplaint(id: string): Promise<ComplaintCreatedResponse> {
+    const res = await client.post<ComplaintCreatedResponse>(`/complaints/${id}/reopen`, { reason: '' });
     return res.data;
 }

@@ -11,20 +11,20 @@ import { getMyComplaints } from '../../api/complaintsApi';
 import type { ComplaintStatus, ComplaintRead } from '../../types/complaint';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
+    textMuted: '#6B6B80',
+    card: '#13121A',
     danger: '#E83B2A',
     dangerLight: 'rgba(232,59,42,0.08)',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.10)',
     amber: '#D48C00',
     amberLight: 'rgba(255,184,0,0.10)',
-    border: 'rgba(0,0,0,0.06)',
+    border: 'rgba(255,255,255,0.06)',
 };
 
 const STATUS_META: Record<ComplaintStatus, { label: string; bg: string; text: string }> = {
@@ -72,7 +72,7 @@ export default function ComplaintTracker() {
     const visible = filterComplaints(complaints, filter);
 
     const pills: { key: Filter; label: string; count: number; bg: string; text: string }[] = [
-        { key: 'all',      label: 'Total',   count: complaints.length, bg: '#F0EDE8', text: C.textPrimary },
+        { key: 'all',      label: 'Total',   count: complaints.length, bg: '#1C1B24', text: C.textPrimary },
         { key: 'active',   label: 'Active',  count: active,   bg: C.primaryLight, text: C.primary },
         { key: 'resolved', label: 'Resolved',count: resolved, bg: C.successLight, text: C.success },
     ];
@@ -144,7 +144,7 @@ export default function ComplaintTracker() {
                                 borderRadius: 16,
                                 padding: '40px 20px',
                                 textAlign: 'center',
-                                boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                boxShadow: '0 1px 6px rgba(255,255,255,0.03)',
                             }}
                         >
                             <span className="material-symbols-outlined" style={{ fontSize: 40, color: C.textMuted, display: 'block', marginBottom: 12 }}>
@@ -165,14 +165,14 @@ export default function ComplaintTracker() {
                                                 background: C.card,
                                                 borderRadius: 16,
                                                 overflow: 'hidden',
-                                                boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                                                boxShadow: '0 1px 6px rgba(255,255,255,0.03)',
                                             }}
                                         >
                                             <div style={{ padding: '14px 16px' }}>
                                                 {/* Badges row */}
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                                     {c.category && (
-                                                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.textMuted, background: '#F0EDE8', padding: '2px 8px', borderRadius: 999 }}>
+                                                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.textMuted, background: '#1C1B24', padding: '2px 8px', borderRadius: 999 }}>
                                                             {c.category}
                                                         </span>
                                                     )}

@@ -13,7 +13,6 @@ import StaffBottomNav from './StaffBottomNav';
 
 interface Props {
     children: React.ReactNode;
-    /** Set true on pages that have their own sticky CTA button above the nav */
     hasStickyCta?: boolean;
 }
 
@@ -31,7 +30,7 @@ export default function AppShell({ children, hasStickyCta = false }: Props) {
         <div
             style={{
                 minHeight: '100dvh',
-                background: '#FFF5EE',
+                background: '#0A0A0F',
                 display: 'flex',
                 flexDirection: 'column',
             }}

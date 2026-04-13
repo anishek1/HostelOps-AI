@@ -7,12 +7,12 @@
 import { Link } from 'react-router-dom';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    card: '#FFFFFF',
+    card: '#13121A',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.12)',
 };
@@ -79,7 +79,7 @@ export default function ComplaintResolvedSuccess() {
                     flexDirection: 'column',
                     alignItems: 'center',
                     textAlign: 'center',
-                    boxShadow: '0 8px 40px rgba(0,0,0,0.08)',
+                    boxShadow: '0 8px 40px rgba(255,255,255,0.06)',
                     position: 'relative',
                     zIndex: 1,
                 }}

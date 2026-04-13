@@ -11,17 +11,7 @@ import { register } from '../../api/authApi';
 import { useHostelLookup } from '../../hooks/useHostelLookup';
 import SkeletonCard from '../../components/SkeletonCard';
 import type { HostelPublicInfo } from '../../types/user';
-
-const C = {
-    bg: '#FFF8F4',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
-    inputBg: '#F6ECE5',
-    danger: '#E83B2A',
-};
+import { C } from '../../lib/theme';
 
 interface LocationState {
     hostelCode?: string;
@@ -113,7 +103,7 @@ export default function Register() {
                     width: 200,
                     height: 200,
                     borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(70,71,211,0.05) 0%, transparent 70%)',
+                    background: `radial-gradient(circle, ${C.primaryLight} 0%, transparent 70%)`,
                     pointerEvents: 'none',
                     zIndex: 0,
                 }}
@@ -134,6 +124,7 @@ export default function Register() {
                     background: C.bg,
                     maxWidth: 390,
                     margin: '0 auto',
+                    borderBottom: `1px solid ${C.border}`,
                 }}
             >
                 <Link
@@ -214,11 +205,11 @@ export default function Register() {
                             display: 'flex',
                             alignItems: 'center',
                             height: 48,
-                            background: C.inputBg,
+                            background: C.bgElevated,
                             borderRadius: 12,
                             paddingLeft: 4,
                             marginTop: 10,
-                            border: codeError ? `1.5px solid ${C.danger}` : 'none',
+                            border: codeError ? `1.5px solid ${C.danger}` : `1px solid ${C.border}`,
                         }}
                     >
                         <span className="material-symbols-outlined" style={iconStyle}>numbers</span>
@@ -260,10 +251,10 @@ export default function Register() {
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    background: C.card,
+                                    background: C.bgSurface,
                                     padding: '8px 12px',
                                     borderRadius: 999,
-                                    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                                    border: `1px solid ${C.border}`,
                                 }}
                             >
                                 <span
@@ -289,7 +280,7 @@ export default function Register() {
                             </div>
                             <div
                                 style={{
-                                    background: '#FEB700',
+                                    background: C.warningLight,
                                     padding: '4px 12px',
                                     borderRadius: 999,
                                 }}
@@ -300,7 +291,7 @@ export default function Register() {
                                         fontWeight: 800,
                                         textTransform: 'uppercase',
                                         letterSpacing: '0.08em',
-                                        color: '#6B4B00',
+                                        color: C.warning,
                                     }}
                                 >
                                     {hostelInfo.mode} MODE
@@ -328,7 +319,7 @@ export default function Register() {
                             marginBottom: 28,
                             display: 'flex',
                             gap: 14,
-                            border: '1px solid rgba(0,0,0,0.06)',
+                            border: '1px solid rgba(255,255,255,0.06)',
                         }}
                     >
                         <div
@@ -336,7 +327,7 @@ export default function Register() {
                                 width: 38,
                                 height: 38,
                                 borderRadius: 12,
-                                background: 'rgba(255,255,255,0.6)',
+                                background: C.primaryLight,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -361,12 +352,11 @@ export default function Register() {
                 {/* Main details card */}
                 <div
                     style={{
-                        background: C.card,
+                        background: C.bgSurface,
                         borderRadius: 20,
                         padding: 24,
                         marginBottom: 28,
-                        border: '1px solid rgba(0,0,0,0.05)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                        border: `1px solid ${C.border}`,
                     }}
                 >
                     {/* Full name */}
@@ -480,7 +470,7 @@ export default function Register() {
                     <div
                         role="alert"
                         style={{
-                            background: 'rgba(232,59,42,0.06)',
+                            background: C.dangerLight,
                             borderLeft: `3px solid ${C.danger}`,
                             borderRadius: '0 8px 8px 0',
                             padding: '10px 14px',
@@ -526,7 +516,7 @@ export default function Register() {
                         background: `linear-gradient(to top, ${C.bg}, transparent)`,
                     }}
                 />
-                <div style={{ background: C.bg, padding: '8px 24px 32px' }}>
+                <div style={{ background: C.bg, padding: '8px 24px 32px', borderTop: `1px solid ${C.border}` }}>
                     <button
                         type="button"
                         onClick={handleSubmit}
@@ -535,8 +525,8 @@ export default function Register() {
                             width: '100%',
                             height: 52,
                             background: canSubmit
-                                ? 'linear-gradient(135deg, #2C29BB, #4647D3)'
-                                : '#C4C4D4',
+                                ? C.primary
+                                : C.textDisabled,
                             color: '#fff',
                             border: 'none',
                             borderRadius: 24,
@@ -550,7 +540,7 @@ export default function Register() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: 8,
-                            boxShadow: canSubmit ? '0 8px 24px rgba(70,71,211,0.2)' : 'none',
+                            boxShadow: canSubmit ? '0 8px 24px rgba(124,92,252,0.3)' : 'none',
                         }}
                     >
                         <span>{isLoading ? 'Creating account…' : 'Register'}</span>
@@ -574,21 +564,22 @@ const sectionLabelStyle: React.CSSProperties = {
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
-    color: '#464554',
+    color: '#6B6B80',
 };
 
 const fieldRowStyle: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     height: 52,
-    background: '#F6ECE5',
+    background: '#1C1B24',
+    border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: 12,
     paddingLeft: 4,
 };
 
 const iconStyle: React.CSSProperties = {
     padding: '0 12px',
-    color: '#767586',
+    color: '#6B6B80',
     fontSize: 20,
     flexShrink: 0,
 };
@@ -600,7 +591,7 @@ const inputInnerStyle: React.CSSProperties = {
     border: 'none',
     outline: 'none',
     fontSize: 15,
-    color: '#1A1A2E',
+    color: '#F0F0F5',
     fontFamily: 'inherit',
     fontWeight: 500,
 };

@@ -75,7 +75,7 @@ Every file in `tools/` must follow this pattern: typed `Input` Pydantic model + 
 4. **LLM calls**: All Groq/LangChain calls go through `agents/`. Never call Groq directly from services or routes.
 5. **Enums**: All Python enums are defined in `schemas/enums.py`. Never define enums inline in model or schema files. DB-level enums in SQLAlchemy models must mirror these exactly.
 6. **Groq model**: Always use `settings.GROQ_MODEL_NAME`. The default `llama3-8b-8192` was decommissioned by Groq in March 2026 — the correct model is `llama-3.3-70b-versatile`. Never hardcode a model name.
-7. **`WARDEN_ROLES`** always = `[assistant_warden, warden, chief_warden]`. Never use just `warden` for warden-level access checks.
+7. **`UserRole` enum has exactly 4 values**: `student | laundry_man | mess_staff | warden`. No other roles exist in the backend. The CLAUDE.md previously listed 7 roles — that was wrong. Never reference `mess_secretary`, `mess_manager`, `assistant_warden`, or `chief_warden` — they do not exist.
 8. **Operational thresholds** (mess alert levels, laundry slot hours, approval timeout, etc.) come from `hostel_config_service.get_config()` — not from `settings.*`. The service has a 5-minute in-memory cache and falls back to `.env` if the DB row is missing.
 9. **`await db.refresh(obj)` after every `await db.commit()`** when the object is returned afterward — prevents `MissingGreenlet` errors.
 10. **UUID → str `field_validator`**: every Pydantic schema that validates a SQLAlchemy ORM object must convert UUID fields to str with `mode='before'`.
@@ -83,6 +83,9 @@ Every file in `tools/` must follow this pattern: typed `Input` Pydantic model + 
 12. **Analytics queries must handle NULL enum fields** — always check `if field is not None` before calling `.value`.
 13. **Login must include hostel_code.** Room numbers are not globally unique — hostel_id scoping on login is mandatory. Never allow login by room_number alone.
 14. **User management endpoints return 404 (not 403) for cross-hostel users.** Returning 403 would confirm the user exists in another hostel.
+15. **FastAPI serializes responses with `by_alias=True`**. If a Pydantic schema field uses `Field(alias="x")`, the JSON response key is `"x"` (the alias), not the Python field name. Frontend TypeScript types must match the serialized JSON, not the Python attribute name.
+16. **`/notices/` routes have a trailing slash** — `GET /notices/` and `POST /notices/`. All other routes do not use trailing slashes. This is a known backend inconsistency; do not "fix" the slash — match it on the frontend.
+17. **Mess staff cannot call `/mess/my-feedback`** — that endpoint is student-only and returns 403 for `mess_staff` role. Aggregated mess analytics for staff are deferred to a future sprint.
 
 ### Authentication flow
 
@@ -91,12 +94,13 @@ Every file in `tools/` must follow this pattern: typed `Input` Pydantic model + 
 - Token rotation: each `/api/auth/refresh` call revokes the old token and issues a new pair.
 - Theft detection: if a revoked token is reused, all sessions for that user are invalidated.
 - `get_current_user` and `require_role(*roles)` are FastAPI dependencies from `auth_service.py`.
+- **`/auth/refresh` returns `Token` (access + refresh + token_type only), NOT `LoginResponse`** — it does not return user data.
 
 ### Role hierarchy
 
-`student` | `laundry_man` | `mess_secretary` | `mess_manager` | `assistant_warden` | `warden` | `chief_warden`
+`student` | `laundry_man` | `mess_staff` | `warden`
 
-Assistant wardens approve new student registrations (or reject with reason). Students start as `is_verified=False`.
+These are the ONLY four roles. Wardens approve new student registrations (or reject with reason). Students start as `is_verified=False`.
 
 ### Celery beat schedule
 
@@ -114,20 +118,38 @@ Assistant wardens approve new student registrations (or reject with reason). Stu
 
 ### Current sprint & known deviations
 
-**Current sprint: Sprint F — React PWA Frontend.** Backend is feature-complete and fully audited. Sprints 7 and 7b are done. A full production audit (2 rounds, 31 fixes) confirmed hostel_id isolation across all queries. Every DB query must filter by `hostel_id`. A user from hostel A must never see hostel B's data.
+**Current sprint: Sprint F — React PWA Frontend (production-ready).** Backend is feature-complete and fully audited. Sprints 7 and 7b are done. A full production audit (2 rounds, 31 fixes) confirmed hostel_id isolation across all queries. Every DB query must filter by `hostel_id`. A user from hostel A must never see hostel B's data.
+
+**Sprint F frontend is complete and TypeScript-clean** — `npm run build` passes with zero errors as of April 2026. A comprehensive 20-bug audit was conducted and all bugs fixed.
 
 **Critical field name deviations from what you might expect** (these have caused bugs before):
 
-| Model | Actual column | NOT |
+| Model / Schema | Actual field | NOT |
 |---|---|---|
 | `RefreshToken` | `revoked` | `is_revoked` |
 | `Machine` | `repaired_at` | `last_serviced_at` |
 | `LaundrySlot` | `booking_status` | `status` |
 | `LaundrySlot` | `slot_date` + `slot_time` | `start_time` / `end_time` |
-| `MessFeedback` | `food_quality`, `hygiene`, `menu_variety`, `food_quantity`, `timing` (5 separate int columns) | a single `rating` column |
+| `MessFeedback` (DB/ORM) | `date` | `feedback_date` |
+| `MessFeedback` (Pydantic READ) | alias `"date"` → serialized as `"date"` in JSON | `feedback_date` — response JSON key is `"date"` |
+| `MessFeedback` (Pydantic CREATE) | `feedback_date` | `date` — request body key is `feedback_date` |
+| `MessFeedback` | `food_quality`, `hygiene`, `menu_variety`, `food_quantity`, `timing` (5 flat int columns) | a single `rating` column |
 | `MessFeedback` | `meal` | `meal_type` |
-| `MessFeedback` | `date` (DB column name) | `feedback_date` — use `Field(alias="date")` in schema |
+| `Notification` | `type` | `notification_type` |
+| `Notification` | `recipient_id` | `user_id` |
 | `OverrideLog` | `warden_id` | `corrected_by` |
+| `ComplaintTemplate` | `title`, `description`, `category` | `label`, `emoji`, `text` |
+| `MessMenuItem` | `valid_from`, `created_by`, `day_of_week` | `date`, `posted_by` |
+| `WardenComplaint` | `student_id` | `filed_by` |
+
+**Frontend TypeScript type alignment rules** (violations cause silent runtime failures):
+
+- `NotificationType` has exactly 13 values matching `schemas/enums.py:NotificationType` — never use the old 5-value union
+- `ClassifiedBy` includes `'warden_override'` as a fourth value
+- `ComplaintRead` includes `hostel_id`, `ai_suggested_severity`, `classification_note`, `override_note`, `resolved_at` fields
+- `confirmResolved()` and `reopenComplaint()` return `ComplaintCreatedResponse` (not `ComplaintRead`)
+- `refreshTokens()` returns `Token` (not `LoginResponse`)
+- `DaySlot` in `laundryApi.ts` has `{ id, slot_time, machine_id, booking_status, student_id }` — no `is_available`, `is_yours`, `machine_status`, or `booking_id`
 
 ### Feature implementation order
 
@@ -145,13 +167,14 @@ Always follow this sequence when adding any feature — never skip or reorder:
 ### Frontend stack
 
 - **React 19** + **TypeScript** + **Vite 7**
-- **Tailwind CSS v4** (via `@tailwindcss/vite` plugin)
 - **TanStack Query v5** for server state
 - **React Router v7** for routing
 - **Axios** for HTTP; auth token stored and managed via `AuthContext`
 - PWA-enabled via `vite-plugin-pwa`
-- Design system (Sprint F): Clash Display + General Sans fonts, Indigo primary, Saffron accent, Jade success, Vermillion danger, Shadcn/UI components
-- Notification polling: 30-second interval via `useNotifications` hook — WebSockets are explicitly deferred to V2
+- Design system (Sprint F — dark mode): bg `#0A0A0F`, card `#13121A`, primary `#7C5CFC` (electric purple)
+- All pages use `const C = {...}` inline style objects — no Tailwind class usage
+- Material Symbols Outlined font (ligature-based) — requires `font-family`, `font-feature-settings: 'liga'`, `display: inline-block` in `.material-symbols-outlined` CSS class; without this icons render as plain text
+- Notification polling: 30-second interval via `useNotifications` hook — WebSockets deferred to V2
 
 ### Frontend structure
 
@@ -160,10 +183,17 @@ src/
   api/          -> Axios API call functions (one file per domain)
   context/      -> AuthContext (token storage, user state)
   hooks/        -> useAuth and other custom hooks
-  lib/          -> rolePermissions, utility functions
+  lib/          -> rolePermissions, theme constants, utility functions
   pages/        -> one file per route/page
   types/        -> TypeScript interfaces mirroring backend schemas
 ```
+
+### Frontend routing & role gating
+
+- `lib/rolePermissions.ts` is the single source of truth for role → routes mapping
+- `UserRole` type: `'student' | 'laundry_man' | 'mess_staff' | 'warden'` — exactly 4 values
+- `ROLE_DEFAULT_ROUTE`: student→`/student`, laundry_man→`/staff/laundry`, mess_staff→`/staff/mess`, warden→`/warden`
+- `ProtectedRoute` uses dark bg `#0A0A0F` for loading state
 
 ## Environment Setup
 
@@ -173,6 +203,6 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 - `JWT_SECRET` — any strong random string
 - `GROQ_API_KEY` — from Groq console
 - `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` — Redis/Upstash URLs (use `rediss://` for TLS)
-- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_CLAIM_EMAIL` — generate with `npx web-push generate-vapid-keys`
+- `HF_API_KEY` — HuggingFace Inference API key (for complaint embedding service)
 
 The backend reads `.env` using an absolute path, so it works regardless of working directory.

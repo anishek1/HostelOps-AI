@@ -54,7 +54,7 @@ class StatusUpdateRequest(BaseModel):
 
 
 class ReopenRequest(BaseModel):
-    reason: str
+    reason: str = ""
 
 
 class ReopenResponse(BaseModel):
@@ -86,7 +86,7 @@ def serialize_complaint(complaint, requesting_user) -> ComplaintRead | Complaint
     - If anonymous AND requesting user is staff (not warden/chief_warden): return ComplaintReadAnonymous (hide student_id)
     - If anonymous AND requesting user is warden or chief_warden: return ComplaintRead (wardens can see all)
     """
-    WARDEN_ROLES = [UserRole.warden, UserRole.chief_warden, UserRole.assistant_warden]
+    WARDEN_ROLES = [UserRole.warden]
     
     if not complaint.is_anonymous:
         return ComplaintRead.model_validate(complaint)
@@ -105,18 +105,11 @@ def serialize_complaint(complaint, requesting_user) -> ComplaintRead | Complaint
 # Staff roles used in role checks
 STAFF_ROLES = (
     UserRole.laundry_man,
-    UserRole.mess_secretary,
-    UserRole.mess_manager,
-    UserRole.assistant_warden,
+    UserRole.mess_staff,
     UserRole.warden,
-    UserRole.chief_warden,
 )
 
-WARDEN_ROLES = (
-    UserRole.assistant_warden,
-    UserRole.warden,
-    UserRole.chief_warden,
-)
+WARDEN_ROLES = (UserRole.warden,)
 
 
 # ---------------------------------------------------------------------------
@@ -295,15 +288,40 @@ async def get_complaint_timeline(
         .order_by(AuditLog.created_at.asc())
     )
     logs = result.scalars().all()
-    return [
-        {
-            "id": str(log.id),
-            "action": log.action,
-            "timestamp": log.created_at.isoformat(),
-            "user_id": str(log.user_id),
+
+    def _parse_action(action: str):
+        """
+        Parse action strings like:
+          "TRANSITION:INTAKE→CLASSIFIED"
+          "TRANSITION:INTAKE→CLASSIFIED | warden note"
+          "COMPLAINT_CREATED"
+          "RESOLUTION_CONFIRMED"
+        Returns (status, note).
+        """
+        if action.startswith("TRANSITION:"):
+            body = action[len("TRANSITION:"):]
+            if " | " in body:
+                arrow_part, note = body.split(" | ", 1)
+            else:
+                arrow_part, note = body, None
+            status = arrow_part.split("→")[-1].strip()
+            return status, note
+        special = {
+            "COMPLAINT_CREATED": "INTAKE",
+            "RESOLUTION_CONFIRMED": "RESOLVED",
         }
-        for log in logs
-    ]
+        return special.get(action, action), None
+
+    entries = []
+    for log in logs:
+        status, note = _parse_action(log.action)
+        entries.append({
+            "status": status,
+            "changed_at": log.created_at.isoformat(),
+            "changed_by": str(log.user_id),
+            "note": note,
+        })
+    return entries
 
 
 # ---------------------------------------------------------------------------

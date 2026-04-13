@@ -11,11 +11,8 @@ from enum import Enum
 class UserRole(str, Enum):
     student = "student"
     laundry_man = "laundry_man"
-    mess_secretary = "mess_secretary"
-    mess_manager = "mess_manager"
-    assistant_warden = "assistant_warden"
+    mess_staff = "mess_staff"
     warden = "warden"
-    chief_warden = "chief_warden"
 
 
 class HostelMode(str, Enum):

@@ -31,7 +31,7 @@ async def create_admin_user(db) -> None:
     # Check if any assistant_warden already exists
     result = await db.execute(
         select(User).where(
-            User.role == UserRole.assistant_warden,
+            User.role == UserRole.warden,
             User.is_active == True,
         )
     )
@@ -71,7 +71,7 @@ async def create_admin_user(db) -> None:
         admin = User(
             name=name,
             room_number=room_number,
-            role=UserRole.assistant_warden,
+            role=UserRole.warden,
             hostel_mode=HostelMode.college,
             hashed_password=hash_password(password),
             is_verified=True,

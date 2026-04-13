@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-WARDEN_ROLES = [UserRole.assistant_warden, UserRole.warden, UserRole.chief_warden]
+WARDEN_ROLES = [UserRole.warden]
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ async def get_alerts(
     db: AsyncSession = Depends(get_db),
 ):
     """Get recent mess alerts (warden + mess_manager only)."""
-    allowed = WARDEN_ROLES + [UserRole.mess_manager]
+    allowed = WARDEN_ROLES + [UserRole.mess_staff]
     if current_user.role not in allowed:
         raise HTTPException(status_code=403, detail="Access restricted to wardens and mess managers")
     alerts = await mess_service.get_recent_alerts(db, hostel_id=current_user.hostel_id)
@@ -111,7 +111,7 @@ async def create_mess_menu(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a mess menu entry. Allowed: mess_manager or WARDEN_ROLES."""
-    allowed = WARDEN_ROLES + [UserRole.mess_manager]
+    allowed = WARDEN_ROLES + [UserRole.mess_staff]
     if current_user.role not in allowed:
         raise HTTPException(status_code=403, detail="Only mess managers and wardens can create menu entries.")
     menu = await mess_menu_service.create_menu(

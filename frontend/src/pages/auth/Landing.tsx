@@ -8,18 +8,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import SkeletonCard from '../../components/SkeletonCard';
 import { useHostelLookup } from '../../hooks/useHostelLookup';
-
-const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
-    inputBg: '#F6ECE5',
-    inputBorder: '#E8E4DE',
-    danger: '#E83B2A',
-};
+import { C } from '../../lib/theme';
 
 export default function Landing() {
     const navigate = useNavigate();
@@ -58,9 +47,9 @@ export default function Landing() {
                     width: 300,
                     height: 300,
                     borderRadius: '50%',
-                    background: '#4647D3',
+                    background: C.primary,
                     filter: 'blur(80px)',
-                    opacity: 0.03,
+                    opacity: 0.06,
                     transform: 'translate(25%, -25%)',
                     pointerEvents: 'none',
                     zIndex: 0,
@@ -157,7 +146,7 @@ export default function Landing() {
                             fontWeight: 700,
                             letterSpacing: '0.08em',
                             textTransform: 'uppercase',
-                            color: 'rgba(70,69,84,0.7)',
+                            color: C.textMuted,
                         }}
                     >
                         ENTER YOUR HOSTEL CODE
@@ -173,7 +162,7 @@ export default function Landing() {
                                 top: '50%',
                                 transform: 'translateY(-50%)',
                                 fontSize: 20,
-                                color: 'rgba(70,69,84,0.4)',
+                                color: C.textMuted,
                                 pointerEvents: 'none',
                             }}
                         >
@@ -188,8 +177,8 @@ export default function Landing() {
                             style={{
                                 width: '100%',
                                 height: 52,
-                                background: C.inputBg,
-                                border: 'none',
+                                background: C.bgElevated,
+                                border: `1px solid ${C.border}`,
                                 borderRadius: 12,
                                 paddingLeft: 48,
                                 paddingRight: 52,
@@ -243,14 +232,13 @@ export default function Landing() {
                             ) : hostelInfo ? (
                                 <div
                                     style={{
-                                        background: C.card,
+                                        background: C.bgSurface,
                                         borderRadius: 20,
                                         padding: '16px',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'space-between',
-                                        border: '1px solid rgba(0,0,0,0.06)',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                        border: `1px solid ${C.border}`,
                                     }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -259,7 +247,7 @@ export default function Landing() {
                                                 width: 40,
                                                 height: 40,
                                                 borderRadius: '50%',
-                                                background: 'rgba(254,183,0,0.15)',
+                                                background: C.warningLight,
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
@@ -269,7 +257,7 @@ export default function Landing() {
                                                 className="material-symbols-outlined"
                                                 style={{
                                                     fontSize: 20,
-                                                    color: '#7C5800',
+                                                    color: C.warning,
                                                     fontVariationSettings: "'FILL' 1",
                                                 }}
                                             >
@@ -344,7 +332,7 @@ export default function Landing() {
                             height: 52,
                             background: C.card,
                             color: C.textPrimary,
-                            border: '1.5px solid #EBEBEF',
+                            border: `1.5px solid ${C.border}`,
                             borderRadius: 14,
                             fontSize: 15,
                             fontWeight: 700,
@@ -410,7 +398,7 @@ export default function Landing() {
                         fontWeight: 500,
                         letterSpacing: '0.08em',
                         textTransform: 'uppercase',
-                        color: '#464554',
+                        color: C.textMuted,
                         opacity: 0.6,
                         margin: 0,
                     }}

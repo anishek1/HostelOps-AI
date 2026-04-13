@@ -4,7 +4,6 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import AppShell from '../../components/AppShell';
@@ -12,24 +11,24 @@ import { useAuth } from '../../hooks/useAuth';
 import client from '../../api/client';
 
 const C = {
-    bg: '#FFF5EE',
-    primary: '#4647D3',
+    bg: '#0A0A0F',
+    primary: '#7C5CFC',
     primaryLight: 'rgba(70,71,211,0.10)',
     primaryContainer: 'rgba(70,71,211,0.12)',
-    textPrimary: '#1A1A2E',
+    textPrimary: '#F0F0F5',
     textSecondary: '#6B6B80',
-    textMuted: '#9B9BAF',
-    card: '#FFFFFF',
+    textMuted: '#6B6B80',
+    card: '#13121A',
     danger: '#E83B2A',
     dangerLight: 'rgba(232,59,42,0.10)',
     success: '#1A9B6C',
     successLight: 'rgba(26,155,108,0.10)',
     inputBg: '#F6ECE5',
-    border: 'rgba(0,0,0,0.06)',
+    border: 'rgba(255,255,255,0.06)',
 };
 
-function initials(name: string) {
-    return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+function initials(name: string | undefined) {
+    if (!name) return '?'; return name.split(' ').map((w) => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase();
 }
 
 function formatDate(iso: string) {
@@ -43,7 +42,6 @@ interface PasswordForm {
 }
 
 export default function StudentProfile() {
-    const navigate = useNavigate();
     const { user, logout } = useAuth();
     const [pwForm, setPwForm] = useState<PasswordForm>({ current_password: '', new_password: '', confirm_password: '' });
     const [pwError, setPwError] = useState<string | null>(null);
@@ -89,7 +87,7 @@ export default function StudentProfile() {
 
     function handleLogout() {
         logout();
-        navigate('/auth/login', { replace: true });
+        window.location.replace('/auth/login');
     }
 
     if (!user) return null;
@@ -113,19 +111,11 @@ export default function StudentProfile() {
                         justifyContent: 'space-between',
                     }}
                 >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <button
-                            onClick={() => navigate(-1)}
-                            style={{ background: C.card, border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-                        >
-                            <span className="material-symbols-outlined" style={{ fontSize: 20, color: C.textPrimary }}>arrow_back</span>
-                        </button>
-                        <h1 style={{ fontSize: 18, fontWeight: 700, color: C.textPrimary, margin: 0 }}>Student Profile</h1>
-                    </div>
+                    <h1 style={{ fontSize: 20, fontWeight: 700, color: C.primary, margin: 0 }}>Student Profile</h1>
                     <button
                         style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                     >
-                        <span className="material-symbols-outlined" style={{ fontSize: 22, color: C.textSecondary }}>settings</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 22, color: C.primary }}>settings</span>
                     </button>
                 </header>
 
@@ -137,28 +127,28 @@ export default function StudentProfile() {
                             flexDirection: 'column',
                             alignItems: 'center',
                             textAlign: 'center',
-                            marginBottom: 24,
+                            marginBottom: 28,
                         }}
                     >
                         <div
                             style={{
-                                width: 88,
-                                height: 88,
-                                borderRadius: 28,
-                                background: C.primaryContainer,
+                                width: 112,
+                                height: 112,
+                                borderRadius: 32,
+                                background: C.primary,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: 28,
+                                fontSize: 34,
                                 fontWeight: 800,
-                                color: C.primary,
-                                marginBottom: 14,
-                                boxShadow: '0 4px 20px rgba(70,71,211,0.15)',
+                                color: '#fff',
+                                marginBottom: 18,
+                                boxShadow: '0 4px 20px rgba(70,71,211,0.20)',
                             }}
                         >
                             {initials(name)}
                         </div>
-                        <h2 style={{ fontSize: 20, fontWeight: 800, color: C.textPrimary, margin: '0 0 4px' }}>{name}</h2>
+                        <h2 style={{ fontSize: 22, fontWeight: 800, color: C.textPrimary, margin: '0 0 4px' }}>{name}</h2>
                         <p style={{ fontSize: 13, color: C.textSecondary, margin: '0 0 10px' }}>
                             Student · Room {user.room_number}
                         </p>
@@ -167,13 +157,13 @@ export default function StudentProfile() {
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 5,
-                                background: C.primaryLight,
+                                background: '#1C1B24',
                                 padding: '4px 12px',
                                 borderRadius: 999,
                             }}
                         >
-                            <span className="material-symbols-outlined" style={{ fontSize: 13, color: C.primary }}>calendar_today</span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: C.primary }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: 13, color: C.textSecondary }}>calendar_today</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: C.textSecondary }}>
                                 Member since {formatDate(user.created_at)}
                             </span>
                         </div>
@@ -182,15 +172,15 @@ export default function StudentProfile() {
                     {/* Bento stats */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 20 }}>
                         {[
-                            { label: 'Day Streak', value: streak, icon: 'local_fire_department' },
-                            { label: 'Complaints', value: '—', icon: 'chat_bubble' },
-                            { label: 'Room No', value: user.room_number, icon: 'door_front' },
+                            { label: 'Day Streak', value: streak, primary: false },
+                            { label: 'Complaints', value: '—', primary: false },
+                            { label: 'Room No', value: user.room_number, primary: true },
                         ].map((s) => (
                             <div
                                 key={s.label}
                                 style={{
-                                    background: C.primaryContainer,
-                                    borderRadius: 16,
+                                    background: s.primary ? C.primary : C.card,
+                                    borderRadius: 20,
                                     padding: '14px 10px',
                                     display: 'flex',
                                     flexDirection: 'column',
@@ -198,11 +188,8 @@ export default function StudentProfile() {
                                     gap: 5,
                                 }}
                             >
-                                <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.primary, fontVariationSettings: "'FILL' 1" }}>
-                                    {s.icon}
-                                </span>
-                                <span style={{ fontSize: 18, fontWeight: 800, color: C.textPrimary }}>{s.value}</span>
-                                <span style={{ fontSize: 10, fontWeight: 600, color: C.textMuted, textAlign: 'center' }}>{s.label}</span>
+                                <span style={{ fontSize: 22, fontWeight: 800, color: s.primary ? '#fff' : C.primary }}>{s.value}</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: s.primary ? 'rgba(255,255,255,0.75)' : C.textMuted, textAlign: 'center' }}>{s.label}</span>
                             </div>
                         ))}
                     </div>
@@ -213,48 +200,36 @@ export default function StudentProfile() {
                             background: C.card,
                             borderRadius: 20,
                             padding: '18px 20px',
-                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                            boxShadow: '0 1px 6px rgba(255,255,255,0.03)',
                             marginBottom: 14,
                         }}
                     >
                         <p style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.10em', textTransform: 'uppercase', margin: '0 0 14px' }}>
                             Account Details
                         </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                             {[
-                                { label: 'Full Name', value: name, icon: 'person' },
-                                { label: 'Room Number', value: user.room_number, icon: 'door_front' },
+                                { label: 'Full Name', value: name },
+                                { label: 'Room Allocation', value: user.room_number },
                             ].map((row) => (
-                                <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                    <div style={{ width: 34, height: 34, borderRadius: 10, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                        <span className="material-symbols-outlined" style={{ fontSize: 17, color: C.primary }}>{row.icon}</span>
-                                    </div>
-                                    <div>
-                                        <p style={{ fontSize: 11, color: C.textMuted, margin: '0 0 1px' }}>{row.label}</p>
-                                        <p style={{ fontSize: 14, fontWeight: 600, color: C.textPrimary, margin: 0 }}>{row.value}</p>
-                                    </div>
+                                <div key={row.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: 14, color: C.textSecondary, fontWeight: 500 }}>{row.label}</span>
+                                    <span style={{ fontSize: 14, fontWeight: 600, color: C.textPrimary }}>{row.value}</span>
                                 </div>
                             ))}
-                            {/* Mode badge */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{ width: 34, height: 34, borderRadius: 10, background: C.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                    <span className="material-symbols-outlined" style={{ fontSize: 17, color: C.primary }}>school</span>
-                                </div>
-                                <div>
-                                    <p style={{ fontSize: 11, color: C.textMuted, margin: '0 0 1px' }}>Hostel Mode</p>
-                                    <span style={{ fontSize: 12, fontWeight: 700, color: C.primary, background: C.primaryLight, padding: '2px 10px', borderRadius: 999, textTransform: 'capitalize' }}>
-                                        {user.hostel_mode}
-                                    </span>
-                                </div>
+                            {/* Mode */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 14, color: C.textSecondary, fontWeight: 500 }}>Study Mode</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, background: C.primaryLight, padding: '3px 10px', borderRadius: 999, textTransform: 'capitalize' }}>
+                                    {user.hostel_mode}
+                                </span>
                             </div>
                             {/* Verification */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{ width: 34, height: 34, borderRadius: 10, background: C.successLight, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                    <span className="material-symbols-outlined" style={{ fontSize: 17, color: C.success, fontVariationSettings: "'FILL' 1" }}>verified</span>
-                                </div>
-                                <div>
-                                    <p style={{ fontSize: 11, color: C.textMuted, margin: '0 0 1px' }}>Account Status</p>
-                                    <p style={{ fontSize: 14, fontWeight: 600, color: C.success, margin: 0 }}>Verified</p>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 14, color: C.textSecondary, fontWeight: 500 }}>Verification</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.success, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: C.success }}>Verified</span>
                                 </div>
                             </div>
                         </div>
@@ -266,7 +241,7 @@ export default function StudentProfile() {
                             background: C.card,
                             borderRadius: 20,
                             padding: '18px 20px',
-                            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+                            boxShadow: '0 1px 6px rgba(255,255,255,0.03)',
                             marginBottom: 20,
                         }}
                     >
@@ -274,7 +249,7 @@ export default function StudentProfile() {
                             Security Settings
                         </p>
                         <form onSubmit={handlePasswordSubmit}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                                 {(
                                     [
                                         { field: 'current_password' as const, label: 'Current Password', showKey: 'current' as const },
@@ -282,41 +257,45 @@ export default function StudentProfile() {
                                         { field: 'confirm_password' as const, label: 'Confirm New Password', showKey: 'confirm' as const },
                                     ]
                                 ).map((row) => (
-                                    <div
-                                        key={row.field}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            background: C.inputBg,
-                                            borderRadius: 12,
-                                            height: 50,
-                                            paddingLeft: 14,
-                                        }}
-                                    >
-                                        <input
-                                            type={showPw[row.showKey] ? 'text' : 'password'}
-                                            value={pwForm[row.field]}
-                                            onChange={(e) => setPwForm((f) => ({ ...f, [row.field]: e.target.value }))}
-                                            placeholder={row.label}
+                                    <div key={row.field}>
+                                        <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.textMuted, display: 'block', marginBottom: 6 }}>
+                                            {row.label}
+                                        </label>
+                                        <div
                                             style={{
-                                                flex: 1,
-                                                background: 'transparent',
-                                                border: 'none',
-                                                outline: 'none',
-                                                fontSize: 14,
-                                                color: C.textPrimary,
-                                                fontFamily: 'inherit',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                background: C.inputBg,
+                                                borderRadius: 12,
+                                                height: 50,
+                                                paddingLeft: 14,
                                             }}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowPw((s) => ({ ...s, [row.showKey]: !s[row.showKey] }))}
-                                            style={{ background: 'none', border: 'none', padding: '0 14px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                                         >
-                                            <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.textMuted }}>
-                                                {showPw[row.showKey] ? 'visibility_off' : 'visibility'}
-                                            </span>
-                                        </button>
+                                            <input
+                                                type={showPw[row.showKey] ? 'text' : 'password'}
+                                                value={pwForm[row.field]}
+                                                onChange={(e) => setPwForm((f) => ({ ...f, [row.field]: e.target.value }))}
+                                                placeholder="••••••••"
+                                                style={{
+                                                    flex: 1,
+                                                    background: 'transparent',
+                                                    border: 'none',
+                                                    outline: 'none',
+                                                    fontSize: 14,
+                                                    color: C.textPrimary,
+                                                    fontFamily: 'inherit',
+                                                }}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPw((s) => ({ ...s, [row.showKey]: !s[row.showKey] }))}
+                                                style={{ background: 'none', border: 'none', padding: '0 14px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                            >
+                                                <span className="material-symbols-outlined" style={{ fontSize: 18, color: C.textMuted }}>
+                                                    {showPw[row.showKey] ? 'visibility_off' : 'visibility'}
+                                                </span>
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

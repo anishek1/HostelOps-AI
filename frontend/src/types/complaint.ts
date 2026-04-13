@@ -23,7 +23,7 @@ export type ComplaintStatus =
     | 'REOPENED'
     | 'ESCALATED';
 
-export type ClassifiedBy = 'llm' | 'fallback' | 'manual';
+export type ClassifiedBy = 'llm' | 'fallback' | 'manual' | 'warden_override';
 
 export type OverrideReason =
     | 'wrong_category'
@@ -40,6 +40,7 @@ export interface ComplaintCreate {
 
 export interface ComplaintRead {
     id: string;
+    hostel_id: string;
     student_id: string;
     text: string;
     is_anonymous: boolean;
@@ -49,11 +50,15 @@ export interface ComplaintRead {
     assigned_to: string | null;
     confidence_score: number | null;
     ai_suggested_category: ComplaintCategory | null;
+    ai_suggested_severity: ComplaintSeverity | null;
     ai_suggested_assignee: string | null;
     requires_approval: boolean;
-    classified_by: ClassifiedBy;
+    classified_by: ClassifiedBy | null;
+    classification_note: string | null;
     override_reason: OverrideReason | null;
+    override_note: string | null;
     flagged_input: string | null;
+    resolved_at: string | null;
     created_at: string;
     updated_at: string;
 }
